@@ -514,13 +514,13 @@ export default function App() {
             </div>
           </div>
 
-          <div className="max-w-2xl mx-auto h-24 bg-white/5 border border-white/10 rounded-3xl mt-6 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-[6px] uppercase">
+          <div className="max-w-2xl mx-auto h-24 bg-white/5 border border-white/10 rounded-3xl mt-6 mb-12 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-[6px] uppercase">
             Ad Space
           </div>
         </section>
 
         {/* Results */}
-        <section className="space-y-10">
+        <section className="space-y-12 mt-12">
           <AnimatePresence mode="popLayout">
             {items.map((item) => (
               <motion.div
@@ -586,19 +586,27 @@ export default function App() {
 
                       <div className="mb-8">
                         <div className="flex items-center gap-2 text-indigo-400 mb-2 group-hover:text-indigo-300 transition-colors">
-                          <div className="w-6 h-6 rounded-full bg-indigo-500/10 flex items-center justify-center">
+                          <div className={cn(
+                            "w-6 h-6 rounded-full flex items-center justify-center",
+                            theme === "dark" ? "bg-indigo-500/10" : "bg-indigo-50"
+                          )}>
                             <User className="w-3 h-3" />
                           </div>
                           <span className="text-sm font-bold truncate">
-                            {item.metadata?.uploader || "Creator Unknown"}
+                            {item.metadata?.uploader || (item.status === 'error' ? "Metadata Unavailable" : "Creator Unknown")}
                           </span>
                         </div>
                         <h3 className={cn(
                           "text-xl md:text-3xl font-black mb-3 tracking-tight leading-tight",
                           theme === "dark" ? "text-white" : "text-gray-900"
                         )} title={item.metadata?.title}>
-                          {item.status === 'loading' ? 'Analyzing Source...' : item.metadata?.title || 'Video Caption'}
+                          {item.status === 'loading' ? 'Analyzing Source...' : (item.metadata?.title || (item.status === 'error' ? 'Extraction Error' : 'Video Caption'))}
                         </h3>
+                        {item.status === 'error' && item.error && (
+                          <div className="mt-2 text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-24 overflow-auto scrollbar-hide">
+                             {item.error}
+                          </div>
+                        )}
                         <p className={cn(
                           "text-xs line-clamp-2 italic font-medium",
                           theme === "dark" ? "text-gray-500" : "text-gray-400"
