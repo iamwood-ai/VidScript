@@ -379,16 +379,10 @@ export default function App() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <h2 className={cn(
-              "text-4xl sm:text-7xl font-black mb-2 tracking-tighter leading-none",
-              theme === "dark" ? "text-white" : "text-gray-900"
-            )}>
-              SAVING <span className="text-indigo-600">SMART.</span>
-            </h2>
-            <h3 className="text-lg sm:text-2xl font-bold mb-2 tracking-tight text-gray-500">
+            <h3 className="text-xl sm:text-4xl font-black mb-1 tracking-tight text-gray-500">
               Free video downloads and AI transcripts.
             </h3>
-            <h4 className="text-base sm:text-xl font-extrabold mb-8 tracking-tight leading-tight text-indigo-400 uppercase tracking-[4px]">
+            <h4 className="text-lg sm:text-2xl font-black mb-8 tracking-tight leading-tight text-indigo-600 uppercase tracking-[6px]">
               Paste, Save, and Analyze.
             </h4>
           </motion.div>
