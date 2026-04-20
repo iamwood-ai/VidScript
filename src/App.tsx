@@ -33,7 +33,8 @@ import {
   Moon,
   Upload as UploadIcon,
   Layers,
-  FileUp
+  FileUp,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -371,24 +372,24 @@ export default function App() {
         </div>
 
         <section className="text-center mb-8">
-          <motion.h2 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={cn(
-              "text-base sm:text-2xl md:text-3xl font-extrabold mb-1 tracking-tight leading-tight",
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            <h2 className={cn(
+              "text-4xl sm:text-7xl font-black mb-2 tracking-tighter leading-none",
               theme === "dark" ? "text-white" : "text-gray-900"
-            )}
-          >
-            Free video downloads and AI transcripts.
-          </motion.h2>
-          <motion.h2 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-base sm:text-2xl md:text-3xl font-extrabold mb-8 tracking-tight leading-tight text-indigo-400"
-          >
-            Paste, Save, and Analyze.
-          </motion.h2>
+            )}>
+              SAVING <span className="text-indigo-600">SMART.</span>
+            </h2>
+            <h3 className="text-lg sm:text-2xl font-bold mb-2 tracking-tight text-gray-500">
+              Free video downloads and AI transcripts.
+            </h3>
+            <h4 className="text-base sm:text-xl font-extrabold mb-8 tracking-tight leading-tight text-indigo-400 uppercase tracking-[4px]">
+              Paste, Save, and Analyze.
+            </h4>
+          </motion.div>
         </section>
 
         {/* Search / Input Box - Mode Tapped */}
@@ -442,8 +443,7 @@ export default function App() {
                </button>
             </div>
 
-            {/* Input Group */}
-            <div className="p-4 sm:p-6 flex flex-col sm:flex-row items-center gap-4">
+            <div className="p-4 sm:p-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                {activeTab === 'upload' ? (
                  <label className="w-full sm:flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 cursor-pointer hover:bg-white/5 transition-colors group">
                     <UploadIcon className="w-8 h-8 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
@@ -457,9 +457,9 @@ export default function App() {
                  </label>
                ) : (
                  <div className={cn(
-                   "w-full sm:flex-1 flex items-center pl-6 pr-2 rounded-2xl border transition-colors h-[64px]",
+                   "w-full sm:flex-1 flex items-center px-6 rounded-2xl border transition-all h-[64px]",
                    theme === "dark" 
-                     ? "bg-black/20 border-white/5 focus-within:border-indigo-500/50" 
+                     ? "bg-black border-white/10 focus-within:border-indigo-500/50" 
                      : "bg-gray-50 border-gray-100 focus-within:border-indigo-500/30"
                  )}>
                     <textarea
@@ -469,25 +469,35 @@ export default function App() {
                       className="flex-1 bg-transparent border-none focus:ring-0 text-sm sm:text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap p-0 leading-[24px]"
                       onKeyDown={(e) => !e.shiftKey && e.key === 'Enter' && (e.preventDefault(), handleAddUrls())}
                     />
-                    <button 
-                      onClick={handlePaste}
-                      className="p-3 text-gray-500 hover:text-indigo-400 transition-colors bg-white/5 rounded-xl hover:bg-white/10 ml-2 group/paste relative shrink-0"
-                      title="Paste from clipboard"
-                    >
-                      <LinkIcon className="w-5 h-5 transition-transform group-hover/paste:rotate-45" />
-                      <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/paste:opacity-100 transition-all scale-95 group-hover/paste:scale-100 whitespace-nowrap border border-white/10 pointer-events-none uppercase tracking-widest font-black z-50 shadow-2xl">Paste URL</span>
-                    </button>
                  </div>
                )}
                
-               <button
-                onClick={handleAddUrls}
-                disabled={activeTab === 'upload' ? !uploadFile : !inputText.trim()}
-                className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-10 h-[64px] rounded-2xl font-black text-xs tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-indigo-600/20 mt-auto sm:mt-0"
-              >
-                {activeTab === 'upload' ? 'ANALYZE' : 'START'}
-                <ChevronRight className="w-4 h-4" />
-              </button>
+               <div className="w-full sm:w-auto flex flex-col gap-3 shrink-0">
+                  <button
+                    onClick={(!inputText.trim() && activeTab !== 'upload') ? handlePaste : handleAddUrls}
+                    disabled={activeTab === 'upload' && !uploadFile}
+                    className={cn(
+                      "w-full px-10 h-[64px] rounded-2xl font-black text-[10px] sm:text-xs tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg",
+                      (!inputText.trim() && activeTab !== 'upload')
+                        ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20"
+                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20"
+                    )}
+                  >
+                    {activeTab === 'upload' 
+                      ? 'ANALYZE' 
+                      : (inputText.trim() ? 'START' : 'PASTE URL')}
+                    {inputText.trim() ? <ChevronRight className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
+                  </button>
+
+                  {(inputText.trim() && activeTab !== 'upload') && (
+                    <button 
+                      onClick={() => setInputText("")}
+                      className="w-full h-12 rounded-2xl bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white transition-all font-black text-[9px] uppercase tracking-[3px] border border-red-600/20 active:scale-95 animate-in slide-in-from-top-2 duration-200"
+                    >
+                      Remove URL
+                    </button>
+                  )}
+               </div>
             </div>
 
             {/* Platform Indicators - Modern Style */}
