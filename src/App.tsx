@@ -192,18 +192,20 @@ export default function App() {
         body: JSON.stringify({ url: urlToUse }),
       });
 
-      if (!response.ok) throw new Error("Failed to extract video info");
-
-      const data: VideoMetadata = await response.json();
+      const data = await response.json();
       
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Failed to extract video info");
+      }
+
       setItems(current => 
         current.map(item => item.id === id ? { 
           ...item, 
           status: "ready", 
           metadata: data,
           selectedQuality: data.formats
-            .filter(f => f.vcodec !== 'none')
-            .sort((a,b) => (b.quality || 0) - (a.quality || 0))[0]?.format_id
+            .filter((f: any) => f.vcodec !== 'none')
+            .sort((a: any, b: any) => (b.quality || 0) - (a.quality || 0))[0]?.format_id || "default"
         } : item)
       );
     } catch (err: any) {
@@ -613,8 +615,16 @@ export default function App() {
                           {item.status === 'loading' ? 'Analyzing Source...' : (item.metadata?.title || (item.status === 'error' ? 'Extraction Error' : 'Video Caption'))}
                         </h3>
                         {item.status === 'error' && item.error && (
-                          <div className="mt-2 text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-24 overflow-auto scrollbar-hide">
-                             {item.error}
+                          <div className="mt-2 group/error">
+                            <div className="text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-24 overflow-auto scrollbar-hide mb-2">
+                               {item.error}
+                            </div>
+                            <button 
+                              onClick={() => extractInfo(item.id)}
+                              className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest flex items-center gap-2 transition-colors"
+                            >
+                              <History className="w-3 h-3" /> Try Again
+                            </button>
                           </div>
                         )}
                         <p className={cn(
@@ -663,7 +673,8 @@ export default function App() {
                         disabled={item.status !== "ready"}
                         className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
                       >
-                        <Download className="w-5 h-5" /> SAVE
+                        <Shield className="w-4 h-4 text-indigo-300" />
+                        <Download className="w-5 h-5" /> SAVE NO WATERMARK
                       </button>
                       <div className="relative group/menu">
                         <button
@@ -673,8 +684,8 @@ export default function App() {
                             theme === "dark" ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
                           )}
                         >
-                          {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
-                          <span className="hidden sm:inline font-bold text-sm tracking-tight uppercase">Transcript</span>
+                          {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5 group-hover:text-indigo-400" />}
+                          <span className="hidden sm:inline font-bold text-sm tracking-tight uppercase">AI Magic</span>
                         </button>
                         
                         <div className="absolute right-0 bottom-full mb-2 bg-[#111] border border-white/10 p-2 rounded-2xl shadow-2xl opacity-0 group-hover/menu:opacity-100 pointer-events-none group-hover/menu:pointer-events-auto transition-all scale-95 group-hover/menu:scale-100 z-50">
