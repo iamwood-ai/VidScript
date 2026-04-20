@@ -6,12 +6,25 @@
     <!-- Preconnect for Performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     
+    <style>
+      /* Critical CSS for Instant Paint */
+      :root { background: #ffffff; color: #111111; }
+      html.dark { background: #000000; color: #ffffff; }
+      body { margin: 0; font-family: sans-serif; }
+      #root { min-height: 100vh; }
+      
+      /* Smooth transitions for theme toggle later */
+      html { transition: background-color 0.2s ease; }
+    </style>
+
     <script>
-      // Optimization: Set theme immediately to prevent flash
-      const theme = localStorage.getItem('theme') || 'light';
-      if (theme === 'dark') document.documentElement.classList.add('dark');
+      // Optimization: Set theme IMMEDIATELY to prevent white flash
+      (function() {
+        const theme = localStorage.getItem('theme') || 'light';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+      })();
     </script>
     <title>VidScript - Free Video Downloader & AI Transcripts</title>
     <meta name="description" content="VidScript is the best free video downloader and AI transcript generator for YouTube, TikTok, Instagram, and Facebook. Download high-quality videos without watermarks and get instant AI scripts." />
