@@ -78,8 +78,9 @@ interface DownloadItem {
   error?: string;
   audioOnly: boolean;
   selectedQuality?: string;
-  transcript?: string;
-  transcriptType?: "normal" | "timeline";
+  transcriptNormal?: string;
+  transcriptTimeline?: string;
+  transcriptActiveType?: "normal" | "timeline";
   isTranscribing?: boolean;
 }
 
@@ -228,7 +229,17 @@ export default function App() {
     const ai = getAi();
     if (!item || !item.metadata || !ai) return;
 
-    setItems(current => current.map(item => item.id === id ? { ...item, isTranscribing: true, transcriptType: type } : item));
+    // Don't re-generate if we already have it
+    if (type === 'normal' && item.transcriptNormal) {
+      setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'normal' } : it));
+      return;
+    }
+    if (type === 'timeline' && item.transcriptTimeline) {
+      setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'timeline' } : it));
+      return;
+    }
+
+    setItems(current => current.map(it => it.id === id ? { ...it, isTranscribing: true, transcriptActiveType: type } : it));
 
     const promptType = type === "timeline" 
       ? "Generate a detailed TIMELINE/CHAPTER based transcript. Include timestamps (e.g. 00:00 - Intro) and describe what happens in each segment."
@@ -237,21 +248,38 @@ export default function App() {
     try {
       const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Analyze this video metadata and generate the requested content.
+        contents: `Analysing video metadata to provide the transcript content ONLY.
         Type: ${promptType}
         Title: ${item.metadata.title}
         Description: ${item.metadata.description || "No description available"}
         Duration: ${item.metadata.duration || "Unknown"} seconds
         Platform: ${item.metadata.extractor}
         
-        CRITICAL: Detect the language of the video from the title/metadata and generate the response in that natural language. 
-        Keep it accurate. Use Markdown.`
+        CRITICAL RULES:
+        1. OUTPUT THE TRANSCRIPT CONTENT ONLY.
+        2. NO INTRODUCTIONS (e.g. "Based on the metadata...").
+        3. NO META-ANALYSIS (e.g. "Platform: Instagram").
+        4. NO NOTES OR DISCLAIMERS at the start or bottom.
+        5. DO NOT mention the AI or the detection process.
+        6. Detect the language of the video from the title/metadata and generate the response in that natural language.
+        
+        Start directly with the content. Use Markdown.`
       });
 
-      setItems(current => current.map(item => item.id === id ? { ...item, transcript: result.text, isTranscribing: false } : item));
+      const responseText = result.text;
+
+      setItems(current => current.map(it => {
+        if (it.id !== id) return it;
+        return { 
+          ...it, 
+          [type === 'normal' ? 'transcriptNormal' : 'transcriptTimeline']: responseText, 
+          isTranscribing: false, 
+          transcriptActiveType: type 
+        };
+      }));
     } catch (err) {
       console.error("AI Error:", err);
-      setItems(current => current.map(item => item.id === id ? { ...item, isTranscribing: false, transcript: "Failed to generate AI content." } : item));
+      setItems(current => current.map(it => it.id === id ? { ...it, isTranscribing: false } : it));
     }
   };
 
@@ -663,7 +691,6 @@ export default function App() {
                         </div>
                       )}
                     </div>
-
                     <div className="flex items-stretch gap-3">
                        <button
                         onClick={() => startDownload(item)}
@@ -672,62 +699,61 @@ export default function App() {
                       >
                         SAVE
                       </button>
-                      <div className="relative group/menu">
-                        <button
-                          disabled={item.status !== "ready" || item.isTranscribing}
-                          className={cn(
-                            "px-6 h-full border rounded-2xl flex items-center justify-center gap-2 group transition-all",
-                            theme === "dark" ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
-                          )}
-                        >
-                          {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5 group-hover:text-indigo-400" />}
-                          <span className="hidden sm:inline font-bold text-sm tracking-tight uppercase">AI Magic</span>
-                        </button>
-                        
-                        <div className="absolute right-0 bottom-full mb-2 bg-[#111] border border-white/10 p-2 rounded-2xl shadow-2xl opacity-0 group-hover/menu:opacity-100 pointer-events-none group-hover/menu:pointer-events-auto transition-all scale-95 group-hover/menu:scale-100 z-50">
-                           <button onClick={() => generateTranscript(item.id, 'normal')} className="w-full px-4 py-3 rounded-xl hover:bg-white/5 flex items-center gap-3 transition-colors text-left">
-                              <FileText className="w-4 h-4 text-gray-400" />
-                              <div className="leading-none">
-                                <p className="text-xs font-bold text-gray-200">Normal Script</p>
-                                <p className="text-[9px] text-gray-500">Flowing text summary</p>
-                              </div>
-                           </button>
-                           <button onClick={() => generateTranscript(item.id, 'timeline')} className="w-full px-4 py-3 rounded-xl hover:bg-white/5 flex items-center gap-3 transition-colors mt-1 text-left">
-                              <History className="w-4 h-4 text-gray-400" />
-                              <div className="leading-none">
-                                <p className="text-xs font-bold text-gray-200">Timeline Mode</p>
-                                <p className="text-[9px] text-gray-500">Chaptered transcript</p>
-                              </div>
-                           </button>
-                        </div>
-                      </div>
+                      <button
+                        onClick={() => generateTranscript(item.id, 'normal')}
+                        disabled={item.status !== "ready" || item.isTranscribing}
+                        className={cn(
+                          "px-6 h-full border rounded-2xl flex items-center justify-center gap-2 group transition-all font-bold text-sm tracking-tight uppercase",
+                          theme === "dark" ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                        )}
+                      >
+                        {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5 group-hover:text-indigo-400" />}
+                        <span className="hidden sm:inline">AI Magic</span>
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 <AnimatePresence>
-                   {item.transcript && (
+                   {(item.transcriptNormal || item.transcriptTimeline) && (
                      <motion.div 
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
                       className="border-t border-white/5 bg-white/[0.02] p-8"
                      >
                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                           <div className="flex items-center gap-3">
-                             <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", item.transcriptType === 'timeline' ? "bg-amber-500/20" : "bg-indigo-500/20")}>
-                                {item.transcriptType === 'timeline' ? <Clock className="w-5 h-5 text-amber-500" /> : <Sparkles className="w-5 h-5 text-indigo-500" />}
+                             <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", item.transcriptActiveType === 'timeline' ? "bg-amber-500/20" : "bg-indigo-500/20")}>
+                                {item.transcriptActiveType === 'timeline' ? <Clock className="w-5 h-5 text-amber-500" /> : <Sparkles className="w-5 h-5 text-indigo-500" />}
                              </div>
                              <div>
-                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-[2px] block">
-                                  AI Generation: {item.transcriptType?.toUpperCase()}
-                                </span>
-                                <p className="text-sm font-bold text-gray-200">Video Transcript</p>
+                                <div className="flex bg-white/5 p-1 rounded-lg border border-white/5 gap-1">
+                                   <button 
+                                      onClick={() => generateTranscript(item.id, 'normal')}
+                                      className={cn(
+                                         "px-3 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                                         item.transcriptActiveType === 'normal' ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-300"
+                                      )}
+                                   >
+                                      Text
+                                   </button>
+                                   <button 
+                                      onClick={() => generateTranscript(item.id, 'timeline')}
+                                      className={cn(
+                                         "px-3 py-1 rounded-md text-[10px] font-black uppercase transition-all",
+                                         item.transcriptActiveType === 'timeline' ? "bg-amber-500 text-white" : "text-gray-500 hover:text-gray-300"
+                                      )}
+                                   >
+                                      Chapters
+                                   </button>
+                                </div>
                              </div>
                           </div>
                           
                           <div className="flex items-center gap-2">
                              <button 
-                               onClick={() => copyToClipboard(item.transcript || "")}
+                               onClick={() => copyToClipboard(item.transcriptActiveType === 'timeline' ? item.transcriptTimeline || "" : item.transcriptNormal || "")}
                                className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
                              >
                                <Copy className="w-3.5 h-3.5" /> COPY
@@ -748,11 +774,18 @@ export default function App() {
                        </div>
                        
                        <div className="p-6 bg-black/40 border border-white/5 rounded-2xl relative">
-                          <div className="prose prose-invert prose-sm max-w-none">
-                             <pre className="whitespace-pre-wrap font-sans text-gray-300 text-sm leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar">
-                               {item.transcript}
-                             </pre>
-                          </div>
+                           <div className="prose prose-invert prose-sm max-w-none">
+                              {item.isTranscribing ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                   <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                                   <p className="text-xs font-bold text-gray-500 uppercase tracking-widest animate-pulse">Switching Mode...</p>
+                                </div>
+                              ) : (
+                                <pre className="whitespace-pre-wrap font-sans text-gray-300 text-sm leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar">
+                                  {(item.transcriptActiveType === 'timeline' ? item.transcriptTimeline : item.transcriptNormal) || "Processing..."}
+                                </pre>
+                              )}
+                           </div>
                        </div>
                      </motion.div>
                    )}
