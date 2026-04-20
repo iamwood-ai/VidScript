@@ -56,6 +56,9 @@ interface Format {
   vcodec?: string;
   acodec?: string;
   note?: string;
+  abr?: number;
+  width?: number;
+  height?: number;
 }
 
 interface VideoMetadata {
@@ -331,16 +334,19 @@ export default function App() {
     // Could add a toast here
   };
 
-  const exportTranscript = (id: string, format: 'srt' | 'vtt') => {
+  const exportTranscript = (id: string, ext: 'srt' | 'vtt') => {
     const item = items.find(i => i.id === id);
-    if (!item || !item.transcript) return;
+    if (!item) return;
 
-    const content = format === 'vtt' ? `WEBVTT\n\n${item.transcript}` : item.transcript;
+    const transcriptStr = item.transcriptActiveType === 'timeline' ? item.transcriptTimeline : item.transcriptNormal;
+    if (!transcriptStr) return;
+
+    const content = ext === 'vtt' ? `WEBVTT\n\n${transcriptStr}` : transcriptStr;
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${item.metadata?.title || 'transcript'}.${format}`;
+    link.download = `${item.metadata?.title || 'transcript'}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -352,9 +358,10 @@ export default function App() {
     let format: Format | undefined;
     
     if (item.audioOnly) {
+      // Find the best audio-only stream, or fall back to any stream if not found
       format = item.metadata.formats
-        .filter(f => f.vcodec === 'none' && f.acodec !== 'none')
-        .sort((a,b) => (b.filesize || 0) - (a.filesize || 0))[0];
+        .filter(f => f.acodec !== 'none')
+        .sort((a,b) => (b.abr || b.filesize || 0) - (a.abr || a.filesize || 0))[0];
     } else {
       format = item.metadata.formats.find(f => f.format_id === item.selectedQuality);
     }
