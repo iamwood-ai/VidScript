@@ -224,61 +224,88 @@ export default function App() {
     }
   };
 
-  const generateTranscript = async (id: string, type: "normal" | "timeline") => {
+  const generateTranscript = async (id: string, type: "normal" | "timeline" | "both") => {
     const item = items.find(i => i.id === id);
     const ai = getAi();
     if (!item || !item.metadata || !ai) return;
 
-    // Don't re-generate if we already have it
-    if (type === 'normal' && item.transcriptNormal) {
-      setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'normal' } : it));
-      return;
+    const typesToGen: ("normal" | "timeline")[] = [];
+    if (type === 'both') {
+      if (!item.transcriptNormal) typesToGen.push('normal');
+      if (!item.transcriptTimeline) typesToGen.push('timeline');
+      if (typesToGen.length === 0) {
+        setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'normal' } : it));
+        return;
+      }
+    } else {
+      if (type === 'normal' && item.transcriptNormal) {
+        setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'normal' } : it));
+        return;
+      }
+      if (type === 'timeline' && item.transcriptTimeline) {
+        setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'timeline' } : it));
+        return;
+      }
+      typesToGen.push(type);
     }
-    if (type === 'timeline' && item.transcriptTimeline) {
-      setItems(current => current.map(it => it.id === id ? { ...it, transcriptActiveType: 'timeline' } : it));
-      return;
-    }
 
-    setItems(current => current.map(it => it.id === id ? { ...it, isTranscribing: true, transcriptActiveType: type } : it));
+    setItems(current => current.map(it => it.id === id ? { 
+      ...it, 
+      isTranscribing: true, 
+      transcriptActiveType: it.transcriptActiveType || (type === "both" ? "normal" : type) 
+    } : it));
 
-    const promptType = type === "timeline" 
-      ? "Generate a detailed TIMELINE/CHAPTER based transcript. Include timestamps (e.g. 00:00 - Intro) and describe what happens in each segment."
-      : "Generate a detailed flow-of-text summary and transcript overview. Format it as an informative reading text.";
+    const gen = async (t: "normal" | "timeline") => {
+      const promptType = t === "timeline" 
+        ? "Generate a detailed TIMELINE/CHAPTER based transcript. Include timestamps (e.g. 00:00 - Intro) and describe what happens in each segment."
+        : "Generate a professional, well-structured transcript and summary written like an expert article writer. Use clear headings, bullet points for key takeaways, and a sophisticated narrative flow.";
 
-    try {
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analysing video metadata to provide the transcript content ONLY.
+      const contents = `Analysing video metadata to provide the transcript content ONLY.
         Type: ${promptType}
-        Title: ${item.metadata.title}
-        Description: ${item.metadata.description || "No description available"}
-        Duration: ${item.metadata.duration || "Unknown"} seconds
-        Platform: ${item.metadata.extractor}
+        Title: ${item.metadata?.title}
+        Description: ${item.metadata?.description || "No description available"}
+        Duration: ${item.metadata?.duration || "Unknown"} seconds
+        Platform: ${item.metadata?.extractor}
         
         CRITICAL RULES:
         1. OUTPUT THE TRANSCRIPT CONTENT ONLY.
-        2. NO INTRODUCTIONS (e.g. "Based on the metadata...").
-        3. NO META-ANALYSIS (e.g. "Platform: Instagram").
-        4. NO NOTES OR DISCLAIMERS at the start or bottom.
-        5. DO NOT mention the AI or the detection process.
-        6. Detect the language of the video from the title/metadata and generate the response in that natural language.
+        2. NO INTRODUCTIONS.
+        3. NO META-ANALYSIS.
+        4. NO NOTES OR DISCLAIMERS.
+        5. DO NOT mention the AI.
+        6. Detect the language of the video and use it naturally.
         
-        Start directly with the content. Use Markdown.`
-      });
+        Start directly with the content. Use Markdown.`;
 
-      const responseText = result.text;
+      try {
+        const result = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents
+        });
+        return result.text;
+      } catch (e) {
+        console.error(`AI Error for ${t}:`, e);
+        return null;
+      }
+    };
+
+    try {
+      const results = await Promise.all(typesToGen.map(t => gen(t).then(res => ({ type: t, res }))));
 
       setItems(current => current.map(it => {
         if (it.id !== id) return it;
-        return { 
-          ...it, 
-          [type === 'normal' ? 'transcriptNormal' : 'transcriptTimeline']: responseText, 
-          isTranscribing: false, 
-          transcriptActiveType: type 
-        };
+        const updates: any = { isTranscribing: false };
+        results.forEach(r => {
+          if (r.res) {
+            if (r.type === 'normal') updates.transcriptNormal = r.res;
+            if (r.type === 'timeline') updates.transcriptTimeline = r.res;
+          }
+        });
+        if (type === 'both' && updates.transcriptNormal) updates.transcriptActiveType = 'normal';
+        return { ...it, ...updates };
       }));
     } catch (err) {
-      console.error("AI Error:", err);
+      console.error("Magic Generation Error:", err);
       setItems(current => current.map(it => it.id === id ? { ...it, isTranscribing: false } : it));
     }
   };
@@ -648,10 +675,7 @@ export default function App() {
                           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest animate-pulse">Processing metadata...</p>
                         )}
                         {item.status === 'ready' && (
-                           <div className="flex items-center gap-2 mb-2">
-                              <CheckCircle2 className="w-3 h-3 text-green-500" />
-                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-[2px]">Verified High-Quality Source</span>
-                           </div>
+                           <div className="flex items-center gap-2 mb-2 h-3" />
                         )}
                       </div>
 
@@ -683,10 +707,16 @@ export default function App() {
                              theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
                            )}>
                               <span className="text-[9px] font-bold text-gray-600 uppercase block mb-1">Mode</span>
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center justify-between gap-2 mb-3">
                                  <button onClick={() => toggleAudioOnly(item.id)} className={cn("flex-1 py-1 rounded text-[10px] font-bold transition-all", !item.audioOnly ? "bg-indigo-600 text-white" : "bg-white/10 text-gray-500")}>VIDEO</button>
                                  <button onClick={() => toggleAudioOnly(item.id)} className={cn("flex-1 py-1 rounded text-[10px] font-bold transition-all", item.audioOnly ? "bg-indigo-600 text-white" : "bg-white/10 text-gray-500")}>MP3</button>
                               </div>
+                              <button 
+                                 onClick={() => window.open(item.url, '_blank')}
+                                 className="w-full py-2 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl text-[9px] font-black text-pink-500 flex items-center justify-center gap-2 transition-all uppercase tracking-[2px] mt-3 group"
+                              >
+                                 Platform Source {getPlatformIcon(detectPlatform(item.url), "w-3 h-3 group-hover:scale-110 transition-transform")}
+                              </button>
                            </div>
                         </div>
                       )}
@@ -700,14 +730,14 @@ export default function App() {
                         SAVE
                       </button>
                       <button
-                        onClick={() => generateTranscript(item.id, 'normal')}
+                        onClick={() => generateTranscript(item.id, 'both')}
                         disabled={item.status !== "ready" || item.isTranscribing}
                         className={cn(
-                          "px-6 h-full border rounded-2xl flex items-center justify-center gap-2 group transition-all font-bold text-sm tracking-tight uppercase",
+                          "px-6 border rounded-2xl flex items-center justify-center gap-2 group transition-all font-bold text-sm tracking-tight uppercase",
                           theme === "dark" ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
                         )}
                       >
-                        {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5 group-hover:text-indigo-400" />}
+                        {item.isTranscribing ? <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> : <Sparkles className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />}
                         <span className="hidden sm:inline">AI Magic</span>
                       </button>
                     </div>
@@ -745,7 +775,7 @@ export default function App() {
                                          item.transcriptActiveType === 'timeline' ? "bg-amber-500 text-white" : "text-gray-500 hover:text-gray-300"
                                       )}
                                    >
-                                      Chapters
+                                      Timestamps
                                    </button>
                                 </div>
                              </div>
