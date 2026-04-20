@@ -164,6 +164,17 @@ export default function App() {
     setInputText("");
   }, [inputText, activeTab, uploadFile]);
 
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setInputText(prev => prev ? `${prev}\n${text}` : text);
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+    }
+  };
+
   const extractInfo = async (id: string) => {
     setItems(current => 
       current.map(item => item.id === id ? { ...item, status: "loading" } : item)
@@ -325,7 +336,9 @@ export default function App() {
 
       <nav className={cn(
         "sticky top-0 z-50 backdrop-blur-xl border-b px-6 py-4 transition-colors duration-200",
-        theme === "dark" ? "bg-[#050505]/80 border-white/5" : "bg-white/80 border-gray-100"
+        theme === "dark" 
+          ? "bg-[#050505] border-white/5" 
+          : "bg-white/95 border-gray-100 shadow-sm"
       )}>
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -382,17 +395,22 @@ export default function App() {
         <section className="mb-0">
           <div className={cn(
             "max-w-2xl mx-auto rounded-[32px] border transition-all duration-200 overflow-hidden",
-            theme === "dark" ? "bg-[#111] border-white/5" : "bg-white border-gray-100 shadow-xl"
+            theme === "dark" 
+              ? "bg-[#111] border-white/5" 
+              : "bg-white border-gray-100 shadow-xl"
           )}>
             {/* Tabs */}
-            <div className="flex border-b border-white/5 p-2 gap-1">
+            <div className={cn(
+              "flex border-b p-2 gap-1",
+              theme === "dark" ? "border-white/5" : "border-gray-100 bg-gray-50/50"
+            )}>
                <button 
                 onClick={() => setActiveTab('single')}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
                   activeTab === 'single' 
-                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-indigo-50 text-indigo-600") 
-                    : "text-gray-500 hover:text-gray-300"
+                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-white text-indigo-600 shadow-sm") 
+                    : "text-gray-500 hover:text-gray-400"
                 )}
                >
                  <LinkIcon className="w-3 h-3" />
@@ -403,8 +421,8 @@ export default function App() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
                   activeTab === 'batch' 
-                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-indigo-50 text-indigo-600") 
-                    : "text-gray-500 hover:text-gray-300"
+                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-white text-indigo-600 shadow-sm") 
+                    : "text-gray-500 hover:text-gray-400"
                 )}
                >
                  <Layers className="w-3 h-3" />
@@ -415,8 +433,8 @@ export default function App() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
                   activeTab === 'upload' 
-                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-indigo-50 text-indigo-600") 
-                    : "text-gray-500 hover:text-gray-300"
+                    ? (theme === 'dark' ? "bg-white/10 text-white" : "bg-white text-indigo-600 shadow-sm") 
+                    : "text-gray-500 hover:text-gray-400"
                 )}
                >
                  <FileUp className="w-3 h-3" />
@@ -438,15 +456,27 @@ export default function App() {
                     />
                  </label>
                ) : (
-                 <div className="w-full sm:flex-1 flex items-center px-4 bg-black/20 rounded-2xl border border-white/5 focus-within:border-indigo-500/50 transition-colors h-[64px]">
-                    <LinkIcon className="text-gray-600 w-5 h-5 mr-4 shrink-0" />
+                 <div className={cn(
+                   "w-full sm:flex-1 flex items-center pl-6 pr-2 rounded-2xl border transition-colors h-[64px]",
+                   theme === "dark" 
+                     ? "bg-black/20 border-white/5 focus-within:border-indigo-500/50" 
+                     : "bg-gray-50 border-gray-100 focus-within:border-indigo-500/30"
+                 )}>
                     <textarea
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
                       placeholder="Paste a video URL…"
-                      className="w-full bg-transparent border-none focus:ring-0 text-sm sm:text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap"
+                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm sm:text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap p-0 leading-[24px]"
                       onKeyDown={(e) => !e.shiftKey && e.key === 'Enter' && (e.preventDefault(), handleAddUrls())}
                     />
+                    <button 
+                      onClick={handlePaste}
+                      className="p-3 text-gray-500 hover:text-indigo-400 transition-colors bg-white/5 rounded-xl hover:bg-white/10 ml-2 group/paste relative shrink-0"
+                      title="Paste from clipboard"
+                    >
+                      <LinkIcon className="w-5 h-5 transition-transform group-hover/paste:rotate-45" />
+                      <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover/paste:opacity-100 transition-all scale-95 group-hover/paste:scale-100 whitespace-nowrap border border-white/10 pointer-events-none uppercase tracking-widest font-black z-50 shadow-2xl">Paste URL</span>
+                    </button>
                  </div>
                )}
                
@@ -716,7 +746,7 @@ export default function App() {
 
       <footer className={cn(
         "mt-4 border-t pt-16 pb-12 px-6 transition-colors duration-200",
-        theme === "dark" ? "bg-[#050505] border-white/5" : "bg-white border-gray-100"
+        theme === "dark" ? "bg-black border-white/5" : "bg-white border-gray-100"
       )}>
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 sm:gap-20">
            <div className="space-y-6 text-center sm:text-left">
