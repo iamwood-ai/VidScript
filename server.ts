@@ -111,7 +111,13 @@ async function startServer() {
       res.setHeader("Content-Disposition", `attachment; filename="${filename || "video.mp4"}"`);
 
       // Forward some original headers if available
-      const contentType = response.headers["content-type"];
+      let contentType = response.headers["content-type"];
+      if (filename && (filename as string).endsWith(".mp4")) {
+        contentType = "video/mp4";
+      } else if (filename && (filename as string).endsWith(".mp3")) {
+        contentType = "audio/mpeg";
+      }
+
       const contentLength = response.headers["content-length"];
       
       if (typeof contentType === "string") res.setHeader("Content-Type", contentType);

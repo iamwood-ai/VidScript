@@ -301,12 +301,12 @@ export default function App() {
         .sort((a,b) => (b.quality || 0) - (a.quality || 0))[0];
     }
 
-    if (!format) return;
-
-    const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(item.metadata.title + (item.audioOnly ? ".mp3" : ".mp4"))}`;
+    const safeTitle = (item.metadata.title || "video").replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const extension = item.audioOnly ? "mp3" : "mp4";
+    const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(safeTitle + "." + extension)}`;
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = item.metadata.title + (item.audioOnly ? ".mp3" : ".mp4");
+    link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -545,7 +545,7 @@ export default function App() {
               >
                 <div className="flex flex-col lg:flex-row">
                   {/* Thumbnail/Player Section */}
-                  <div className="lg:w-[45%] aspect-video relative bg-black/40 overflow-hidden">
+                  <div className="lg:w-[45%] aspect-[3/4] relative bg-black/40 overflow-hidden">
                     {previewId === item.id ? (
                       <video 
                         src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter(f => f.vcodec !== 'none')[0]?.url || item.url)}`}
@@ -596,26 +596,9 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="mb-8">
-                        <div className="flex items-center gap-2 text-indigo-400 mb-2 group-hover:text-indigo-300 transition-colors">
-                          <div className={cn(
-                            "w-6 h-6 rounded-full flex items-center justify-center",
-                            theme === "dark" ? "bg-indigo-500/10" : "bg-indigo-50"
-                          )}>
-                            <User className="w-3 h-3" />
-                          </div>
-                          <span className="text-sm font-bold truncate">
-                            {item.metadata?.uploader || (item.status === 'error' ? "Metadata Unavailable" : "Creator Unknown")}
-                          </span>
-                        </div>
-                        <h3 className={cn(
-                          "text-xl md:text-3xl font-black mb-3 tracking-tight leading-tight",
-                          theme === "dark" ? "text-white" : "text-gray-900"
-                        )} title={item.metadata?.title}>
-                          {item.status === 'loading' ? 'Analyzing Source...' : (item.metadata?.title || (item.status === 'error' ? 'Extraction Error' : 'Video Caption'))}
-                        </h3>
+                      <div className="mb-6">
                         {item.status === 'error' && item.error && (
-                          <div className="mt-2 group/error">
+                          <div className="group/error mb-4">
                             <div className="text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-24 overflow-auto scrollbar-hide mb-2">
                                {item.error}
                             </div>
@@ -627,32 +610,40 @@ export default function App() {
                             </button>
                           </div>
                         )}
-                        <p className={cn(
-                          "text-xs line-clamp-2 italic font-medium",
-                          theme === "dark" ? "text-gray-500" : "text-gray-400"
-                        )}>
-                          {item.metadata?.description || "No description available"}
-                        </p>
+                        {item.status === 'loading' && (
+                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest animate-pulse">Processing metadata...</p>
+                        )}
+                        {item.status === 'ready' && (
+                           <div className="flex items-center gap-2 mb-2">
+                              <CheckCircle2 className="w-3 h-3 text-green-500" />
+                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-[2px]">Verified High-Quality Source</span>
+                           </div>
+                        )}
                       </div>
 
                     {item.status === 'ready' && (
-                        <div className="grid grid-cols-2 gap-4 mb-8">
-                           <div className={cn(
-                             "rounded-2xl p-4 border transition-colors hover:border-indigo-500/30",
-                             theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
-                           )}>
-                              <span className="text-[9px] font-bold text-gray-600 uppercase block mb-2">Quality</span>
-                              <select 
-                                className="w-full bg-transparent text-sm font-bold focus:outline-none appearance-none cursor-pointer"
-                                value={item.selectedQuality}
-                                onChange={(e) => setQuality(item.id, e.target.value)}
-                              >
-                                {item.metadata?.formats
-                                  .filter(f => f.vcodec !== 'none')
-                                  .sort((a,b) => (b.quality || 0) - (a.quality || 0))
-                                  .map(f => <option key={f.format_id} value={f.format_id} className="bg-neutral-900 text-white">{f.resolution || "Auto"}</option>)}
-                              </select>
-                           </div>
+                        <div className={cn(
+                          "grid gap-4 mb-8",
+                          (detectPlatform(item.url) === 'youtube' && !item.url.includes('/shorts/')) ? "grid-cols-2" : "grid-cols-1"
+                        )}>
+                           {(detectPlatform(item.url) === 'youtube' && !item.url.includes('/shorts/')) && (
+                             <div className={cn(
+                               "rounded-2xl p-4 border transition-colors hover:border-indigo-500/30",
+                               theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                             )}>
+                                <span className="text-[9px] font-bold text-gray-600 uppercase block mb-2">Quality</span>
+                                <select 
+                                  className="w-full bg-transparent text-sm font-bold focus:outline-none appearance-none cursor-pointer"
+                                  value={item.selectedQuality}
+                                  onChange={(e) => setQuality(item.id, e.target.value)}
+                                >
+                                  {item.metadata?.formats
+                                    .filter(f => f.vcodec !== 'none')
+                                    .sort((a,b) => (b.quality || 0) - (a.quality || 0))
+                                    .map(f => <option key={f.format_id} value={f.format_id} className="bg-neutral-900 text-white">{f.resolution || "Auto"}</option>)}
+                                </select>
+                             </div>
+                           )}
                            <div className={cn(
                              "rounded-2xl p-4 border flex flex-col justify-between transition-colors",
                              theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
@@ -671,10 +662,9 @@ export default function App() {
                        <button
                         onClick={() => startDownload(item)}
                         disabled={item.status !== "ready"}
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
                       >
-                        <Shield className="w-4 h-4 text-indigo-300" />
-                        <Download className="w-5 h-5" /> SAVE NO WATERMARK
+                        SAVE
                       </button>
                       <div className="relative group/menu">
                         <button
@@ -732,19 +722,19 @@ export default function App() {
                           <div className="flex items-center gap-2">
                              <button 
                                onClick={() => copyToClipboard(item.transcript || "")}
-                               className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+                               className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
                              >
                                <Copy className="w-3.5 h-3.5" /> COPY
                              </button>
                              <button 
                                onClick={() => exportTranscript(item.id, 'srt')}
-                               className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+                               className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
                              >
                                <FileDown className="w-3.5 h-3.5" /> SRT
                              </button>
                              <button 
                                onClick={() => exportTranscript(item.id, 'vtt')}
-                               className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+                               className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
                              >
                                <FileDown className="w-3.5 h-3.5" /> VTT
                              </button>
