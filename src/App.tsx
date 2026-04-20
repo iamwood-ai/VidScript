@@ -88,17 +88,25 @@ export default function App() {
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
-  const [theme, setTheme] = useState<"dark" | "light">("light");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== 'undefined') {
+       return (localStorage.getItem("theme") as "dark" | "light") || "light";
+    }
+    return "light";
+  });
   const [activeTab, setActiveTab] = useState<"single" | "batch" | "upload">("single");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   
-  const aiRef = useRef<GoogleGenAI | null>(null);
+  const aiInstance = useRef<GoogleGenAI | null>(null);
 
-  useEffect(() => {
+  const getAi = () => {
+    if (aiInstance.current) return aiInstance.current;
     if (process.env.GEMINI_API_KEY) {
-      aiRef.current = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      aiInstance.current = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      return aiInstance.current;
     }
-  }, []);
+    return null;
+  };
 
   const detectPlatform = (url: string) => {
     const u = url.toLowerCase();
@@ -217,7 +225,8 @@ export default function App() {
 
   const generateTranscript = async (id: string, type: "normal" | "timeline") => {
     const item = items.find(i => i.id === id);
-    if (!item || !item.metadata || !aiRef.current) return;
+    const ai = getAi();
+    if (!item || !item.metadata || !ai) return;
 
     setItems(current => current.map(item => item.id === id ? { ...item, isTranscribing: true, transcriptType: type } : item));
 
@@ -226,7 +235,7 @@ export default function App() {
       : "Generate a detailed flow-of-text summary and transcript overview. Format it as an informative reading text.";
 
     try {
-      const result = await aiRef.current.models.generateContent({
+      const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analyze this video metadata and generate the requested content.
         Type: ${promptType}
@@ -379,7 +388,10 @@ export default function App() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <h3 className="text-xl sm:text-4xl font-black mb-1 tracking-tight text-gray-500">
+            <h3 className={cn(
+              "text-xl sm:text-4xl font-black mb-1 tracking-tight",
+              theme === "dark" ? "text-white" : "text-black"
+            )}>
               Free video downloads and AI transcripts.
             </h3>
             <h4 className="text-lg sm:text-2xl font-black mb-8 tracking-tight leading-tight text-indigo-600 uppercase tracking-[6px]">
@@ -645,7 +657,7 @@ export default function App() {
                               <span className="text-[9px] font-bold text-gray-600 uppercase block mb-1">Mode</span>
                               <div className="flex items-center justify-between gap-2">
                                  <button onClick={() => toggleAudioOnly(item.id)} className={cn("flex-1 py-1 rounded text-[10px] font-bold transition-all", !item.audioOnly ? "bg-indigo-600 text-white" : "bg-white/10 text-gray-500")}>VIDEO</button>
-                                 <button onClick={() => toggleAudioOnly(item.id)} className={cn("flex-1 py-1 rounded text-[10px] font-bold transition-all", item.audioOnly ? "bg-indigo-600 text-white" : "bg-white/10 text-gray-500")}>AUDIO</button>
+                                 <button onClick={() => toggleAudioOnly(item.id)} className={cn("flex-1 py-1 rounded text-[10px] font-bold transition-all", item.audioOnly ? "bg-indigo-600 text-white" : "bg-white/10 text-gray-500")}>MP3</button>
                               </div>
                            </div>
                         </div>
