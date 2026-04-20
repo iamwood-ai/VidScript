@@ -28,12 +28,14 @@ async function startServer() {
           noWarnings: true,
           noCheckCertificates: true,
           preferFreeFormats: true,
-          youtubeSkipDashManifest: true,
           referer: url,
         });
         return res.json(output);
       } catch (ytdlError: any) {
-        console.warn("yt-dlp failed, trying robust fallback...", ytdlError.message);
+        // Only log if not a standard social media block (which is expected)
+        if (!ytdlError.message.includes('Instagram') && !ytdlError.message.includes('TikTok')) {
+          console.warn("yt-dlp failed, trying robust fallback...");
+        }
         
         // Robust fallback for UI preview if yt-dlp fails
         const pageRes = await axios.get(url, {
