@@ -551,7 +551,7 @@ export default function App() {
               >
                 <div className="flex flex-col lg:flex-row">
                   {/* Thumbnail/Player Section */}
-                  <div className="lg:w-[45%] aspect-[3/4] relative bg-black/40 overflow-hidden">
+                  <div className="lg:w-[30%] aspect-[4/5] relative bg-black/40 overflow-hidden">
                     {previewId === item.id ? (
                       <video 
                         src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter(f => f.vcodec !== 'none')[0]?.url || item.url)}`}
