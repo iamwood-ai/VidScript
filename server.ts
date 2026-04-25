@@ -62,12 +62,14 @@ async function startServer() {
           flatPlaylist: true,
           quiet: true,
           geoBypass: true,
+          impersonate: "chrome",
           extractorArgs: isYoutube 
-            ? "youtube:player-client=web,mweb" 
+            ? "youtube:player_client=android,ios" 
             : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
           referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (url.includes("tiktok.com") ? "https://www.tiktok.com/" : url))),
           addHeader: [
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language: en-US,en;q=0.9",
           ]
         } as any);
@@ -190,11 +192,13 @@ async function startServer() {
         noWarnings: true,
         quiet: true,
         geoBypass: true,
+        impersonate: "chrome",
         extractorArgs: isYoutube 
-          ? "youtube:player-client=web,mweb" 
+          ? "youtube:player_client=android,ios" 
           : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
         addHeader: [
           "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+          "Referer: " + (isYoutube ? "https://www.youtube.com/" : (isInstagram ? "https://www.instagram.com/" : "https://www.google.com")),
         ]
       } as any);
 

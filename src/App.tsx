@@ -897,7 +897,7 @@ export default function App() {
                             detectPlatform(item.url) === "youtube" ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"
                           )}>
                             {/* Quality Select - Support YouTube with HD preference */}
-                            {detectPlatform(item.url) === "youtube" && (
+                            {detectPlatform(item.url) === "youtube" && !item.url.includes("/shorts/") && (
                               <div className={cn(
                                 "rounded-xl p-3 border",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
@@ -909,16 +909,14 @@ export default function App() {
                                   onChange={(e) => setQuality(item.id, e.target.value)}
                                 >
                                   {(() => {
-                                    const allFormats = (item.metadata?.formats || []).filter((f: any) => f.vcodec !== "none" || f.ext === "mp4");
-                                    const isShorts = item.url.includes("/shorts/");
+                                    const allFormats = (item.metadata?.formats || [])
+                                      .filter((f: any) => f.vcodec !== "none" || f.ext === "mp4")
+                                      .sort((a: any, b: any) => (b.height || 0) - (a.height || 0));
                                     
-                                    // If shorts, just show best quality
-                                    if (isShorts) return <option value="direct">Best Quality (Shorts)</option>;
-                                    
-                                    // Filter for 720p, 1080p, 4K
+                                    // Filter for 720p, 1080p, 4K (2160p)
                                     const hdFormats = allFormats.filter((f: any) => 
                                       f.height === 720 || f.height === 1080 || f.height === 1440 || f.height === 2160
-                                    ).sort((a: any, b: any) => b.height - a.height);
+                                    );
                                     
                                     if (hdFormats.length > 0) {
                                       return hdFormats.map((f: any) => (
@@ -928,7 +926,16 @@ export default function App() {
                                       ));
                                     }
                                     
-                                    // Fallback to absolute best if no HD found
+                                    // Fallback to the absolute highest quality found
+                                    if (allFormats.length > 0) {
+                                      const best = allFormats[0];
+                                      return (
+                                        <option value={best.format_id} className="bg-neutral-900 text-white">
+                                          {best.resolution || `${best.height}p`} (Best Available)
+                                        </option>
+                                      );
+                                    }
+                                    
                                     return <option value="direct">Best Available Quality</option>;
                                   })()}
                                 </select>
@@ -936,21 +943,22 @@ export default function App() {
                             )}
 
                             {/* Media Type Display */}
-                            {detectPlatform(item.url) !== "youtube" && (
-                              <div className={cn(
-                                "rounded-xl p-3 border flex flex-col justify-center",
-                                theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
-                              )}>
-                                <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
-                                <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
-                                  {(() => {
-                                    const platform = detectPlatform(item.url);
-                                    if (platform === "instagram") return "REELS";
-                                    return "VIDEO";
-                                  })()}
-                                </span>
-                              </div>
-                            )}
+                            <div className={cn(
+                              "rounded-xl p-3 border flex flex-col justify-center",
+                              theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                            )}>
+                              <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
+                              <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
+                                {(() => {
+                                  const platform = detectPlatform(item.url);
+                                  const isShorts = item.url.includes("/shorts/");
+                                  if (platform === "youtube") {
+                                    return isShorts ? "SHORT" : "VIDEO";
+                                  }
+                                  return "VIDEO";
+                                })()}
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>
