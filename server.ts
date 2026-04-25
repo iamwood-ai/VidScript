@@ -23,17 +23,26 @@ async function startServer() {
 
     try {
       try {
+        const isFacebook = url.includes("facebook.com") || url.includes("fb.watch") || url.includes("fb.com");
         const output = await youtubeDl(url, {
+          format: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
-          preferFreeFormats: true,
-          referer: url,
+          referer: isFacebook ? "https://www.facebook.com/" : url,
+          addHeader: [
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language: en-US,en;q=0.9"
+          ]
         });
         return res.json(output);
       } catch (ytdlError: any) {
         // Only log if not a standard social media block (which is expected)
-        if (!ytdlError.message.includes('Instagram') && !ytdlError.message.includes('TikTok')) {
+        if (
+          !ytdlError.message.includes("Instagram") &&
+          !ytdlError.message.includes("TikTok") &&
+          !ytdlError.message.includes("Facebook")
+        ) {
           console.warn("yt-dlp failed, trying robust fallback...");
         }
         
@@ -63,14 +72,21 @@ async function startServer() {
         const ogDesc = html.match(/<meta property="og:description" content="(.*?)"/i) || html.match(/<meta name="description" content="(.*?)"/i);
         const description = ogDesc ? ogDesc[1] : "Video successfully identified. Our AI is preparing the high-quality, watermark-free download link.";
 
+        // Attempt to find actual video URL in meta tags for fallback
+        const ogVideo = html.match(/<meta property="og:video" content="(.*?)"/i) || 
+                        html.match(/<meta property="og:video:url" content="(.*?)"/i) ||
+                        html.match(/<meta property="og:video:secure_url" content="(.*?)"/i);
+        
+        const extractedVideoUrl = ogVideo ? ogVideo[1].replace(/&amp;/g, '&') : url;
+
         const fallbackData = {
           title: title.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
-          thumbnail,
+          thumbnail: thumbnail.replace(/&amp;/g, '&'),
           uploader: url.split('/')[2].replace('www.', ''),
-          extractor: url.includes('youtube') ? 'youtube' : (url.includes('tiktok') ? 'tiktok' : (url.includes('instagram') ? 'instagram' : 'video')),
-          description: (description || "").substring(0, 200),
+          extractor: url.includes('youtube') ? 'youtube' : (url.includes('tiktok') ? 'tiktok' : (url.includes('instagram') ? 'instagram' : (url.includes('facebook') ? 'facebook' : 'video'))),
+          description: (description || "").substring(0, 200).replace(/&amp;/g, '&'),
           formats: [
-            { format_id: "direct", url: url, ext: "mp4", note: "Clean Link", quality: 10 }
+            { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "Compatible Format", quality: 10 }
           ],
           webpage_url: url
         };
@@ -92,45 +108,109 @@ async function startServer() {
     if (!url) return res.status(400).send("URL is required");
 
     // Block local/internal URLs
-    if ((url as string).includes('localhost') || (url as string).includes('127.0.0.1')) {
+    if ((url as string).includes("localhost") || (url as string).includes("127.0.0.1")) {
       return res.status(403).send("Forbidden");
     }
 
     try {
+      const range = req.headers.range;
+      const urlStr = url as string;
+      const isInstagram = urlStr.includes("instagram.com") || urlStr.includes("cdninstagram.com");
+      const isFacebook = urlStr.includes("facebook.com") || urlStr.includes("fbcdn.net");
+      const isTikTok = urlStr.includes("tiktok.com") || urlStr.includes("tiktokv.com");
+      
+      // High-compatibility mobile headers to prevent "403 Forbidden" or small error files
+      const headers: any = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+        "Accept-Encoding": "identity", // Important to keep binary stream raw
+      };
+
+      if (isInstagram) {
+        headers["Referer"] = "https://www.instagram.com/";
+        headers["Origin"] = "https://www.instagram.com";
+      } else if (isFacebook) {
+        headers["Referer"] = "https://www.facebook.com/";
+        headers["Origin"] = "https://www.facebook.com";
+      } else if (isTikTok) {
+        headers["Referer"] = "https://www.tiktok.com/";
+      }
+
+      if (range) {
+        headers.Range = range;
+      }
+
       const response = await axios({
         method: "get",
-        url: url as string,
+        url: urlStr,
         responseType: "stream",
-        timeout: 15000,
-        maxRedirects: 5,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "*/*",
-          "Referer": "https://www.google.com/",
-        },
+        timeout: 60000, // 1 minute
+        maxRedirects: 10,
+        headers,
+        validateStatus: (status) => status < 400, // Reject 403, 404, 500 immediately
       });
 
-      res.setHeader("Content-Disposition", `attachment; filename="${filename || "video.mp4"}"`);
-
-      // Forward some original headers if available
-      let contentType = response.headers["content-type"];
-      if (filename && (filename as string).endsWith(".mp4")) {
-        contentType = "video/mp4";
-      } else if (filename && (filename as string).endsWith(".mp3")) {
-        contentType = "audio/mpeg";
+      // Verification: Check if it's actually media or an error page
+      const contentTypeHeader = String(response.headers["content-type"] || "");
+      if (contentTypeHeader.includes("text/html") && !urlStr.includes(".m3u8")) {
+         throw new Error("Target platform returned HTML instead of media stream. Access might be blocked.");
       }
 
-      const contentLength = response.headers["content-length"];
+      // Set broad compatibility headers-
+      let sanitizedFilename = (filename as string || "video.mp4").replace(/[^a-zA-Z0-9.\-_]/g, "_");
       
-      if (typeof contentType === "string") res.setHeader("Content-Type", contentType);
-      if (typeof contentLength === "string" || typeof contentLength === "number") {
-        res.setHeader("Content-Length", String(contentLength));
+      // Force correct extensions based on requested mode (Audio vs Video)
+      const isAudio = (filename as string || "").toLowerCase().endsWith(".mp3");
+      let finalContentType = "application/octet-stream";
+
+      if (isAudio) {
+        if (!sanitizedFilename.toLowerCase().endsWith(".mp3")) {
+          sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp3";
+        }
+        finalContentType = "audio/mpeg";
+      } else {
+        if (!sanitizedFilename.toLowerCase().endsWith(".mp4")) {
+          sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp4";
+        }
+        finalContentType = "video/mp4";
       }
-      
+
+      // Hardened Compatibility Headers for Mobile & Desktop Players
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Type", finalContentType);
+      res.setHeader("Content-Transfer-Encoding", "binary");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`,
+      );
+
+      if (response.headers["content-length"]) {
+        res.setHeader("Content-Length", String(response.headers["content-length"]));
+      }
+      if (response.headers["content-range"]) {
+        res.setHeader("Content-Range", String(response.headers["content-range"]));
+      }
+
+      if (response.status === 206) {
+        res.status(206);
+      }
+
+      // Stream piping
       response.data.pipe(res);
+
+      response.data.on("error", (err: any) => {
+        console.error("Stream error in proxy pipe:", err);
+        if (!res.headersSent) res.status(500).end();
+      });
+
     } catch (error: any) {
-      console.error("Proxy error:", error);
-      res.status(500).send("Failed to proxy video. This format might be protected or transient.");
+      console.error("Proxy error details:", error.message);
+      if (!res.headersSent) {
+        res.status(error.response?.status || 500).send("Failed to stream media from source platform.");
+      }
     }
   });
 

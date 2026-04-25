@@ -120,7 +120,7 @@ export default function App() {
     const u = url.toLowerCase();
     if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
     if (u.includes("tiktok.com")) return "tiktok";
-    if (u.includes("facebook.com") || u.includes("fb.watch")) return "facebook";
+    if (u.includes("facebook.com") || u.includes("fb.watch") || u.includes("fb.com")) return "facebook";
     if (u.includes("instagram.com")) return "instagram";
     return "generic";
   };
@@ -128,14 +128,28 @@ export default function App() {
   const getPlatformIcon = (platform: string, size = "w-5 h-5") => {
     switch (platform) {
       case "youtube":
-        return <Youtube className={cn("text-red-500", size)} />;
+        return (
+          <div className={cn("bg-red-600 rounded-lg p-1.5 flex items-center justify-center", size)}>
+            <Youtube className="text-white w-full h-full" />
+          </div>
+        );
       case "instagram":
-        return <Instagram className={cn("text-pink-500", size)} />;
+        return (
+          <div className={cn("bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 rounded-lg p-1.5 flex items-center justify-center", size)}>
+            <Instagram className="text-white w-full h-full" />
+          </div>
+        );
       case "facebook":
-        return <Facebook className={cn("text-blue-600", size)} />;
+        return (
+          <div className={cn("bg-[#1877F2] rounded-lg p-1.5 flex items-center justify-center", size)}>
+            <Facebook className="text-white w-full h-full" />
+          </div>
+        );
       case "tiktok":
         return (
-          <div className={cn("text-white font-black italic", size)}>TT</div>
+          <div className={cn("bg-black rounded-lg p-1.5 flex items-center justify-center border border-white/20", size)}>
+            <div className="text-white font-black italic scale-75">TT</div>
+          </div>
         );
       default:
         return <LinkIcon className={cn("text-gray-400", size)} />;
@@ -235,9 +249,13 @@ export default function App() {
                 selectedQuality:
                   data.formats
                     .filter((f: any) => f.vcodec !== "none")
-                    .sort(
-                      (a: any, b: any) => (b.quality || 0) - (a.quality || 0),
-                    )[0]?.format_id || "default",
+                    .sort((a: any, b: any) => {
+                      // Prioritize MP4 for universal device compatibility (iOS/Android)
+                      const aMp4 = a.ext === "mp4" ? 1 : 0;
+                      const bMp4 = b.ext === "mp4" ? 1 : 0;
+                      if (aMp4 !== bMp4) return bMp4 - aMp4;
+                      return (b.quality || 0) - (a.quality || 0);
+                    })[0]?.format_id || "default",
               }
             : item,
         ),
@@ -424,12 +442,28 @@ export default function App() {
     let format: Format | undefined;
 
     if (item.audioOnly) {
-      // Find the best audio-only stream, or fall back to any stream if not found
+      // Find the best audio-only stream
       format = item.metadata.formats
-        .filter((f) => f.acodec !== "none")
-        .sort(
-          (a, b) => (b.abr || b.filesize || 0) - (a.abr || a.filesize || 0),
-        )[0];
+        .filter((f) => f.acodec !== "none" && f.vcodec === "none")
+        .sort((a, b) => {
+          // Priority 1: Actual MP3 if it somehow exists (rare in raw streams)
+          const aMp3 = a.ext === "mp3" ? 1 : 0;
+          const bMp3 = b.ext === "mp3" ? 1 : 0;
+          if (aMp3 !== bMp3) return bMp3 - aMp3;
+
+          // Priority 2: M4A/AAC (best universal compatibility after MP3)
+          const aM4a = a.ext === "m4a" ? 1 : 0;
+          const bM4a = b.ext === "m4a" ? 1 : 0;
+          if (aM4a !== bM4a) return bM4a - aM4a;
+
+          // Priority 3: ABR (average bitrate) or size
+          return (b.abr || b.filesize || 0) - (a.abr || a.filesize || 0);
+        })[0];
+
+      // Fallback for some extractors that don't split audio/video streams properly in metadata
+      if (!format) {
+        format = item.metadata.formats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
+      }
     } else {
       format = item.metadata.formats.find(
         (f) => f.format_id === item.selectedQuality,
@@ -447,12 +481,7 @@ export default function App() {
       .toLowerCase();
     const extension = item.audioOnly ? "mp3" : "mp4";
     const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(safeTitle + "." + extension)}`;
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    window.location.assign(downloadUrl);
   };
 
   // Auto-extract idle items
@@ -538,10 +567,10 @@ export default function App() {
       </nav>
 
       <main className="max-w-4xl mx-auto px-6 pt-6 pb-0 lg:pt-12 lg:pb-0">
-        {/* Compact Top Ad */}
-        <div className="w-full h-16 bg-white/5 border border-white/10 rounded-2xl mb-8 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-widest uppercase">
+        {/* Compact Top Ad - Hidden for now */}
+        {/* <div className="w-full h-16 bg-white/5 border border-white/10 rounded-2xl mb-8 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-widest uppercase">
           Advertisement
-        </div>
+        </div> */}
 
         <section className="text-center mb-8">
           <motion.div
@@ -551,13 +580,14 @@ export default function App() {
           >
             <h3
               className={cn(
-                "text-xl sm:text-4xl font-black mb-1 tracking-tight",
+                "text-[22px] sm:text-3xl md:text-5xl font-black mb-1 tracking-tight leading-[1.2] px-4 sm:px-0",
                 theme === "dark" ? "text-white" : "text-black",
               )}
             >
-              Free video downloads and AI transcripts.
+              Free video downloads <br className="sm:hidden" />
+              and AI transcripts.
             </h3>
-            <h4 className="text-lg sm:text-2xl font-black mb-8 tracking-tight leading-tight text-indigo-600 uppercase tracking-[6px]">
+            <h4 className="text-[10px] sm:text-lg md:text-2xl font-black mb-8 tracking-tight leading-tight text-indigo-600 uppercase sm:tracking-[6px] tracking-[2px]">
               Paste, Save, and Analyze.
             </h4>
           </motion.div>
@@ -735,9 +765,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className="max-w-2xl mx-auto h-24 bg-white/5 border border-white/10 rounded-3xl mt-6 mb-12 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-[6px] uppercase">
+          {/* <div className="max-w-2xl mx-auto h-24 bg-white/5 border border-white/10 rounded-3xl mt-6 mb-12 flex items-center justify-center text-gray-700 text-[10px] font-bold tracking-[6px] uppercase">
             Ad Space
-          </div>
+          </div> */}
         </section>
 
         {/* Results */}
@@ -750,11 +780,20 @@ export default function App() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#111] border border-white/5 shadow-xl rounded-[32px] overflow-hidden group"
+                className="bg-[#111] border border-white/5 shadow-xl rounded-[32px] overflow-hidden group relative"
               >
-                <div className="flex flex-col lg:flex-row">
-                  {/* Thumbnail/Player Section */}
-                  <div className="lg:w-[30%] aspect-[4/5] relative bg-black/40 overflow-hidden">
+                {/* Remove Button - Absolute */}
+                <button
+                  onClick={() => removeItem(item.id)}
+                  className="absolute top-4 right-4 z-10 p-2 bg-black/40 hover:bg-red-500/20 text-gray-500 hover:text-red-500 rounded-xl backdrop-blur transition-all active:scale-90"
+                  title="Remove Item"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+
+                <div className="flex flex-col sm:flex-row">
+                  {/* Compact Thumbnail Container */}
+                  <div className="sm:w-64 aspect-video sm:aspect-square relative flex-shrink-0 bg-black/40 overflow-hidden">
                     {previewId === item.id ? (
                       <video
                         src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter((f) => f.vcodec !== "none")[0]?.url || item.url)}`}
@@ -775,209 +814,161 @@ export default function App() {
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => setPreviewId(item.id)}
-                            className="w-16 h-16 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110"
+                            className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110 active:scale-95"
                           >
-                            <Play className="w-8 h-8 fill-current ml-1" />
+                            <Play className="w-6 h-6 fill-current ml-1" />
                           </button>
                         </div>
                       </>
                     )}
+                    
+                    {/* Compact Platform Badge */}
                     <div className="absolute top-4 left-4">
                       <div className="bg-black/60 backdrop-blur px-2 py-1 rounded-lg flex items-center gap-1.5 border border-white/10">
                         {getPlatformIcon(
                           detectPlatform(item.url),
-                          "w-3.5 h-3.5",
+                          "w-3 h-3",
                         )}
-                        <span className="text-[9px] font-bold tracking-widest uppercase text-white">
+                        <span className="text-[8px] font-black tracking-widest uppercase text-white">
                           {detectPlatform(item.url)}
                         </span>
                       </div>
                     </div>
                   </div>
 
+                  {/* Settings & Info Section */}
                   <div
                     className={cn(
-                      "flex-1 p-8 flex flex-col justify-between min-w-0 transition-colors duration-200",
+                      "flex-1 p-6 sm:p-8 flex flex-col justify-between min-w-0 transition-colors duration-200",
                       theme === "dark" ? "bg-[#111]" : "bg-white",
                     )}
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={cn(
-                              "w-2 h-2 rounded-full",
-                              item.status === "ready"
-                                ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"
-                                : "bg-amber-500 animate-pulse",
-                            )}
-                          />
-                          <span
-                            className={cn(
-                              "text-[10px] font-black uppercase tracking-widest",
-                              theme === "dark"
-                                ? "text-gray-500"
-                                : "text-gray-400",
-                            )}
-                          >
-                            {item.status}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="text-gray-600 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                      {/* Top Info */}
+                      <div className="flex items-center gap-2 mb-4">
+                        <div
+                          className={cn(
+                            "w-2 h-2 rounded-full",
+                            item.status === "ready"
+                              ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"
+                              : "bg-amber-500 animate-pulse",
+                          )}
+                        />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                          {item.status === "loading" ? "SCANNING DATA..." : item.status}
+                        </span>
                       </div>
 
-                      <div className="mb-6">
+                      <div className="mb-4">
                         {item.status === "error" && item.error && (
-                          <div className="group/error mb-4">
-                            <div className="text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-24 overflow-auto scrollbar-hide mb-2">
+                          <div className="group/error flex flex-col gap-2">
+                            <div className="text-[10px] text-red-400 font-mono bg-red-400/5 p-3 rounded-xl border border-red-400/10 max-h-20 overflow-auto scrollbar-hide">
                               {item.error}
                             </div>
                             <button
                               onClick={() => extractInfo(item.id)}
-                              className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest flex items-center gap-2 transition-colors"
+                              className="w-fit text-[10px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest flex items-center gap-2 transition-colors"
                             >
-                              <History className="w-3 h-3" /> Try Again
+                              <History className="w-3 h-3" /> RETRY
                             </button>
                           </div>
                         )}
-                        {item.status === "loading" && (
-                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest animate-pulse">
-                            Processing metadata...
-                          </p>
-                        )}
+                        
                         {item.status === "ready" && (
-                          <div className="flex items-center gap-2 mb-2 h-3" />
-                        )}
-                      </div>
-
-                      {item.status === "ready" && (
-                        <div
-                          className={cn(
-                            "grid gap-4 mb-8",
-                            detectPlatform(item.url) === "youtube" &&
-                              !item.url.includes("/shorts/")
-                              ? "grid-cols-2"
-                              : "grid-cols-1",
-                          )}
-                        >
-                          {detectPlatform(item.url) === "youtube" &&
-                            !item.url.includes("/shorts/") && (
-                              <div
-                                className={cn(
-                                  "rounded-2xl p-4 border transition-colors hover:border-indigo-500/30",
-                                  theme === "dark"
-                                    ? "bg-white/5 border-white/5"
-                                    : "bg-gray-50 border-gray-100",
-                                )}
-                              >
-                                <span className="text-[9px] font-bold text-gray-600 uppercase block mb-2">
-                                  Quality
-                                </span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* Quality Select - Conditionally shown */}
+                            {(detectPlatform(item.url) === "youtube" && !item.url.includes("/shorts/")) && (
+                              <div className={cn(
+                                "rounded-xl p-3 border",
+                                theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                              )}>
+                                <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">QUALITY</span>
                                 <select
-                                  className="w-full bg-transparent text-sm font-bold focus:outline-none appearance-none cursor-pointer"
+                                  className="w-full bg-transparent text-xs font-bold focus:outline-none appearance-none cursor-pointer"
                                   value={item.selectedQuality}
-                                  onChange={(e) =>
-                                    setQuality(item.id, e.target.value)
-                                  }
+                                  onChange={(e) => setQuality(item.id, e.target.value)}
                                 >
                                   {item.metadata?.formats
                                     .filter((f) => f.vcodec !== "none")
-                                    .sort(
-                                      (a, b) =>
-                                        (b.quality || 0) - (a.quality || 0),
-                                    )
+                                    .sort((a, b) => {
+                                      const aMp4 = a.ext === "mp4" ? 1 : 0;
+                                      const bMp4 = b.ext === "mp4" ? 1 : 0;
+                                      if (aMp4 !== bMp4) return bMp4 - aMp4;
+                                      return (b.quality || 0) - (a.quality || 0);
+                                    })
                                     .map((f) => (
-                                      <option
-                                        key={f.format_id}
-                                        value={f.format_id}
-                                        className="bg-neutral-900 text-white"
-                                      >
-                                        {f.resolution || "Auto"}
+                                      <option key={f.format_id} value={f.format_id} className="bg-neutral-900 text-white">
+                                        {f.resolution || "Auto"} ({f.ext?.toUpperCase()})
                                       </option>
                                     ))}
                                 </select>
                               </div>
                             )}
-                          <div
-                            className={cn(
-                              "rounded-2xl p-4 border flex flex-col justify-between transition-colors",
-                              theme === "dark"
-                                ? "bg-white/5 border-white/5"
-                                : "bg-gray-50 border-gray-100",
-                            )}
-                          >
-                            <span className="text-[9px] font-bold text-gray-600 uppercase block mb-1">
-                              Mode
-                            </span>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <button
-                                onClick={() => toggleAudioOnly(item.id)}
-                                className={cn(
-                                  "flex-1 py-1 rounded text-[10px] font-bold transition-all",
-                                  !item.audioOnly
-                                    ? "bg-indigo-600 text-white"
-                                    : "bg-white/10 text-gray-500",
-                                )}
-                              >
-                                VIDEO
-                              </button>
-                              <button
-                                onClick={() => toggleAudioOnly(item.id)}
-                                className={cn(
-                                  "flex-1 py-1 rounded text-[10px] font-bold transition-all",
-                                  item.audioOnly
-                                    ? "bg-indigo-600 text-white"
-                                    : "bg-white/10 text-gray-500",
-                                )}
-                              >
-                                MP3
-                              </button>
+
+                            {/* Mode Toggle */}
+                            <div className={cn(
+                              "rounded-xl p-3 border",
+                              theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                            )}>
+                              <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MODE</span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => toggleAudioOnly(item.id)}
+                                  className={cn(
+                                    "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
+                                    !item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400"
+                                  )}
+                                >
+                                  VIDEO
+                                </button>
+                                <button
+                                  onClick={() => toggleAudioOnly(item.id)}
+                                  className={cn(
+                                    "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
+                                    item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400"
+                                  )}
+                                >
+                                  AUDIO
+                                </button>
+                              </div>
                             </div>
-                            <button
-                              onClick={() => window.open(item.url, "_blank")}
-                              className="w-full py-2 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl text-[9px] font-black text-pink-500 flex items-center justify-center gap-2 transition-all uppercase tracking-[2px] mt-3 group"
-                            >
-                              Platform Source{" "}
-                              {getPlatformIcon(
-                                detectPlatform(item.url),
-                                "w-3 h-3 group-hover:scale-110 transition-transform",
-                              )}
-                            </button>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-stretch gap-3">
+
+                    {/* Bottom Action Section */}
+                    <div className="flex items-center gap-2 mt-auto">
                       <button
-                        onClick={() => startDownload(item)}
-                        disabled={item.status !== "ready"}
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
+                        onClick={() => window.open(item.url, "_blank")}
+                        className="flex-1 h-12 border border-indigo-500/10 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center transition-all active:scale-95"
+                        title="Open Original Link"
                       >
-                        SAVE
+                        {getPlatformIcon(detectPlatform(item.url), "w-6 h-6")}
                       </button>
                       <button
                         onClick={() => generateTranscript(item.id, "both")}
-                        disabled={
-                          item.status !== "ready" || item.isTranscribing
-                        }
+                        disabled={item.status !== "ready" || item.isTranscribing}
                         className={cn(
-                          "px-6 border rounded-2xl flex items-center justify-center gap-2 group transition-all font-bold text-sm tracking-tight uppercase",
+                          "flex-1 h-12 border rounded-xl flex items-center justify-center transition-all",
                           theme === "dark"
                             ? "bg-white/5 border-white/10 hover:bg-white/10"
                             : "bg-gray-50 border-gray-200 hover:bg-gray-100",
                         )}
+                        title="AI Magic Transcript"
                       >
                         {item.isTranscribing ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                          <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
                         ) : (
-                          <Sparkles className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
+                          <Sparkles className="w-4 h-4 text-indigo-400" />
                         )}
-                        <span className="hidden sm:inline">AI Magic</span>
+                      </button>
+                      <button
+                        onClick={() => startDownload(item)}
+                        disabled={item.status !== "ready"}
+                        className="flex-1 h-12 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-xl font-black text-xs transition-all active:scale-95 shadow-lg shadow-indigo-600/10 flex items-center justify-center gap-2"
+                      >
+                        SAVE
                       </button>
                     </div>
                   </div>
@@ -1092,11 +1083,11 @@ export default function App() {
             ))}
           </AnimatePresence>
 
-          {items.length > 0 && (
+          {/* {items.length > 0 && (
             <div className="w-full h-32 bg-white/5 border border-white/10 rounded-3xl mt-12 flex items-center justify-center text-gray-600 text-[10px] font-bold tracking-[4px] uppercase">
               Ad Slot
             </div>
-          )}
+          )} */}
         </section>
       </main>
 
