@@ -62,14 +62,12 @@ async function startServer() {
           flatPlaylist: true,
           quiet: true,
           geoBypass: true,
-          impersonate: "chrome",
           extractorArgs: isYoutube 
-            ? "youtube:player_client=android,ios" 
-            : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
+            ? "youtube:player-client=web,mweb" 
+            : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\"" : undefined),
           referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (url.includes("tiktok.com") ? "https://www.tiktok.com/" : url))),
           addHeader: [
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language: en-US,en;q=0.9",
           ]
         } as any);
@@ -119,19 +117,64 @@ async function startServer() {
       } catch (ytdlError: any) {
         console.warn("yt-dlp extraction failed, using fallback...");
         
-        // Robust fallback logic (same as before)
+        // Robust fallback logic for UI preview if yt-dlp fails
         const pageRes = await axios.get(url, {
           headers: { 
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"
           },
-          timeout: 8000,
+          timeout: 10000,
         });
         
         const html = pageRes.data;
-        const ogTitle = html.match(/<meta property="og:title" content="(.*?)"/i);
-        const title = ogTitle ? ogTitle[1] : "Social Video Content";
+        const ogTitle = html.match(/<meta property="og:title" content="(.*?)"/i) || html.match(/<title>(.*?)<\/title>/i);
+        const title = ogTitle ? ogTitle[1].replace(/&amp;/g, '&') : "Social Media Video";
         const ogImage = html.match(/<meta property="og:image" content="(.*?)"/i);
-        const thumbnail = ogImage ? ogImage[1] : `https://picsum.photos/seed/${Math.random()}/800/450`;
+        const thumbnail = ogImage ? ogImage[1].replace(/&amp;/g, '&') : `https://picsum.photos/seed/${Math.random()}/800/450`;
+
+        // Extract raw video URL from HTML for direct fallback
+        let directUrl = "";
+        const patterns = [
+          /"video_url":"([^"]+)"/,
+          /property="og:video:secure_url" content="([^"]+)"/,
+          /property="og:video" content="([^"]+)"/,
+          /"playAddr":"([^"]+)"/,
+          /"downloadAddr":"([^"]+)"/
+        ];
+        
+        for (const p of patterns) {
+          const m = html.match(p);
+          if (m && m[1]) {
+            const found = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+            if (found.startsWith('http')) {
+              directUrl = found;
+              break;
+            }
+          }
+        }
+
+        const formats = [
+          { 
+            format_id: "universal", 
+            url: `/api/download?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`, 
+            ext: "mp4", 
+            note: "Universal Quality", 
+            vcodec: "h264", 
+            acodec: "aac" 
+          }
+        ];
+
+        if (directUrl) {
+          formats.unshift({
+            format_id: "direct",
+            url: `/api/proxy?url=${encodeURIComponent(directUrl)}&filename=video.mp4&mode=inline`,
+            ext: "mp4",
+            note: "Direct Feed (Backup)",
+            vcodec: "h264",
+            acodec: "aac"
+          });
+        }
 
         const fallbackData = {
           title: title,
@@ -139,18 +182,9 @@ async function startServer() {
           uploader: url.split('/')[2].replace('www.', ''),
           extractor: "video",
           duration: 0,
-          description: "Video successfully identified.",
+          description: "Video identified via backup scanner.",
           mediaType: "video",
-          formats: [
-            { 
-              format_id: "universal", 
-              url: `/api/download?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`, 
-              ext: "mp4", 
-              note: "Universal Quality", 
-              vcodec: "h264", 
-              acodec: "aac" 
-            }
-          ],
+          formats: formats,
           webpage_url: url
         };
 
@@ -173,14 +207,13 @@ async function startServer() {
     try {
       console.log(`[Job ${jobId}] Starting download for:`, url);
 
-      // Preferred format string for cross-platform compatibility
-      // We force H.264 (avc1) and AAC (mp4a) inside MP4 container
+      const isYoutube = (url as string).includes("youtube.com") || (url as string).includes("youtu.be");
+      const isInstagram = (url as string).includes("instagram.com");
+
+      // Preferred format string
       const formatSelection = format_id 
         ? `${format_id}+bestaudio[ext=m4a]/best[ext=mp4]/best`
         : "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
-
-      const isYoutube = (url as string).includes("youtube.com") || (url as string).includes("youtu.be");
-      const isInstagram = (url as string).includes("instagram.com");
 
       await youtubeDl(url as string, {
         format: formatSelection,
@@ -192,13 +225,11 @@ async function startServer() {
         noWarnings: true,
         quiet: true,
         geoBypass: true,
-        impersonate: "chrome",
         extractorArgs: isYoutube 
-          ? "youtube:player_client=android,ios" 
-          : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
+          ? "youtube:player-client=web,mweb" 
+          : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\"" : undefined),
         addHeader: [
           "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-          "Referer: " + (isYoutube ? "https://www.youtube.com/" : (isInstagram ? "https://www.instagram.com/" : "https://www.google.com")),
         ]
       } as any);
 
