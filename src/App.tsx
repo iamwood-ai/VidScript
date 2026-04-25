@@ -485,7 +485,8 @@ export default function App() {
     
     const link = document.createElement("a");
     link.href = downloadUrl;
-    link.download = safeTitle.substring(0, 50) + ".mp4";
+    const extension = item.metadata.mediaType === "photo" ? ".png" : ".mp4";
+    link.download = safeTitle.substring(0, 50) + extension;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -950,6 +951,7 @@ export default function App() {
                               <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
                               <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
                                 {(() => {
+                                  if (item.metadata?.mediaType === "photo") return "PHOTO";
                                   const platform = detectPlatform(item.url);
                                   const isShorts = item.url.includes("/shorts/");
                                   if (platform === "youtube") {
@@ -975,15 +977,15 @@ export default function App() {
                       </button>
                       <button
                         onClick={() => generateTranscript(item.id, "both")}
-                        disabled={item.status !== "ready" || item.isTranscribing}
+                        disabled={item.status !== "ready" || item.isTranscribing || item.metadata?.mediaType === "photo"}
                         className={cn(
                           "flex-1 h-12 border rounded-xl flex items-center justify-center transition-all",
                           theme === "dark"
                             ? "bg-[#FF1493]/10 border-[#FF1493]/20 text-[#FF1493] hover:bg-[#FF1493]/20"
                             : "bg-[#FF1493]/5 border-[#FF1493]/20 text-[#FF1493] hover:bg-[#FF1493]/10",
-                          (item.status !== "ready" || item.isTranscribing) && "opacity-50 cursor-not-allowed"
+                          (item.status !== "ready" || item.isTranscribing || item.metadata?.mediaType === "photo") && "opacity-50 cursor-not-allowed"
                         )}
-                        title="AI Magic Transcript"
+                        title={item.metadata?.mediaType === "photo" ? "AI Magic is for video only" : "AI Magic Transcript"}
                       >
                         {item.isTranscribing ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -994,9 +996,9 @@ export default function App() {
                       <button
                         onClick={() => startDownload(item)}
                         disabled={item.status !== "ready"}
-                        className="flex-1 h-12 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-xl font-black text-xs transition-all active:scale-95 shadow-lg shadow-indigo-600/10 flex items-center justify-center gap-2"
+                        className="flex-1 h-12 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-xl font-black text-xs transition-all active:scale-95 shadow-lg shadow-indigo-600/10 flex items-center justify-center gap-2 tracking-widest"
                       >
-                        SAVE
+                        save
                       </button>
                     </div>
                   </div>

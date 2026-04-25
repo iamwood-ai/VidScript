@@ -20,9 +20,19 @@ fs.ensureDirSync(TEMP_DIR);
 function getCleanUrl(rawUrl: string): string {
   try {
     const parsed = new URL(rawUrl);
-    // Remove query parameters that break yt-dlp for Instagram
+    // Remove query parameters that break yt-dlp for Instagram or tracking on X
     if (parsed.hostname.includes("instagram.com")) {
+      // Keep only the path, remove search and hash
       parsed.search = ""; 
+      parsed.hash = "";
+      // Re-add trailing slash as it helps yt-dlp identify Reels/Posts correctly
+      if (!parsed.pathname.endsWith("/")) {
+        parsed.pathname += "/";
+      }
+    } else if (parsed.hostname.includes("x.com") || parsed.hostname.includes("twitter.com")) {
+      // Remove common X tracking parameters
+      parsed.searchParams.delete("s");
+      parsed.searchParams.delete("t");
     }
     // For YouTube, ensure we keep the 'v' parameter but drop tracking
     if (parsed.hostname.includes("youtube.com") && parsed.searchParams.has("v")) {
@@ -70,16 +80,35 @@ async function startServer() {
     try {
       try {
         const isFacebook = targetUrl.includes("facebook.com") || targetUrl.includes("fb.watch") || targetUrl.includes("fb.com");
-        const isX = targetUrl.includes("x.com") || targetUrl.includes("twitter.com");
         const isYoutube = targetUrl.includes("youtube.com") || targetUrl.includes("youtu.be");
         const isInstagram = targetUrl.includes("instagram.com");
+        const isTikTok = targetUrl.includes("tiktok.com");
+        const isX = targetUrl.includes("x.com") || targetUrl.includes("twitter.com");
         
         let extractorArgs = undefined;
         if (isYoutube) {
-          extractorArgs = "youtube:player-client=android,web;player-skip=webpage";
+          // Use web_embedded to bypass some bot detections
+          extractorArgs = "youtube:player-client=web_embedded,mweb,android;player-skip=webpage";
         } else if (isInstagram) {
+          // Instagram often works better with a standard mobile agent
           extractorArgs = 'instagram:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+        } else if (isTikTok) {
+          extractorArgs = 'tiktok:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+        } else if (isFacebook) {
+          extractorArgs = 'facebook:user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"';
+        } else if (isX) {
+          extractorArgs = 'twitter:user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"';
         }
+
+        const commonHeaders = [
+          "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+          "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language: en-US,en;q=0.9",
+          "Upgrade-Insecure-Requests: 1",
+          "Sec-Fetch-Mode: navigate",
+          "Sec-Fetch-Site: same-origin",
+          "Sec-Fetch-Dest: document"
+        ];
 
         const outputRaw = await youtubeDl(targetUrl, {
           format: "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -91,39 +120,56 @@ async function startServer() {
           quiet: true,
           geoBypass: true,
           extractorArgs,
-          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (targetUrl.includes("tiktok.com") ? "https://www.tiktok.com/" : targetUrl))),
-          addHeader: [
-            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language: en-US,en;q=0.9",
-            "Sec-Fetch-Mode: navigate"
-          ]
+          referer: isFacebook ? "https://www.facebook.com/" : (isInstagram ? "https://www.instagram.com/" : (isTikTok ? "https://www.tiktok.com/" : (isX ? "https://x.com/" : "https://www.google.com/"))),
+          addHeader: commonHeaders,
+          cookies: undefined, // Explicitly undefined to avoid issues if any default is set
         } as any);
 
-        const output = outputRaw as any;
+        let output: any;
+        try {
+          output = typeof outputRaw === "string" ? JSON.parse(outputRaw) : outputRaw;
+        } catch (e) {
+          if (typeof outputRaw === "string" && outputRaw.includes("Rate exceeded")) {
+             throw new Error("Platform rate limit exceeded. Please try again in a few minutes.");
+          }
+          throw new Error("Failed to parse metadata from platform. The content might be private or restricted.");
+        }
+
+        if (!output) throw new Error("No metadata returned from platform.");
+
+        // General robust photo detection
+        const isPhoto = output.extractor === 'instagram:photo' || 
+                        output.extractor?.includes('photo') || 
+                        output.extractor?.includes('image') ||
+                        (output.formats && output.formats.length > 0 && output.formats.every((f: any) => 
+                          (!f.vcodec || f.vcodec === 'none') && 
+                          (f.ext === 'jpg' || f.ext === 'png' || f.ext === 'webp' || f.ext === 'jpeg')
+                        ));
+        
+        const mediaType = isPhoto ? "photo" : "video";
 
         // Map formats to a cleaner structure that the frontend expects
         const mappedFormats = (output.formats || []).map((f: any) => ({
           format_id: f.format_id,
           url: `/api/download?url=${encodeURIComponent(targetUrl)}&format_id=${encodeURIComponent(f.format_id)}&title=${encodeURIComponent(output.title || "video")}`,
-          ext: "mp4",
+          ext: isPhoto ? "png" : "mp4", // If photo, we'll convert to png on download
           height: f.height,
           vcodec: f.vcodec,
           acodec: f.acodec,
           abr: f.abr,
           filesize: f.filesize,
           note: f.format_note || f.note || ""
-        })).filter((f: any) => f.vcodec !== "none" || f.format_id === "best");
+        })).filter((f: any) => isPhoto || (f.vcodec !== "none" || f.format_id === "best"));
 
         // Ensure we have at least one "universal" format
         if (mappedFormats.length === 0) {
           mappedFormats.push({
             format_id: "universal",
             url: `/api/download?url=${encodeURIComponent(targetUrl)}&title=${encodeURIComponent(output.title || "video")}`,
-            ext: "mp4",
-            note: "Universal Quality (Best Compatible)",
-            vcodec: "h264",
-            acodec: "aac"
+            ext: isPhoto ? "png" : "mp4",
+            note: isPhoto ? "High Quality Photo" : "Universal Quality (Best Compatible)",
+            vcodec: isPhoto ? "none" : "h264",
+            acodec: isPhoto ? "none" : "aac"
           });
         }
 
@@ -135,7 +181,7 @@ async function startServer() {
           extractor: output.extractor_key?.toLowerCase() || "",
           duration: output.duration || 0,
           description: (output.description || "").substring(0, 200),
-          mediaType: "video",
+          mediaType: mediaType,
           formats: mappedFormats,
           webpage_url: output.webpage_url || targetUrl
         };
@@ -144,21 +190,35 @@ async function startServer() {
       } catch (ytdlError: any) {
         console.warn("yt-dlp extraction failed, using fallback:", ytdlError.message);
         
+        // If it's a known non-recoverable error like rate limit, don't even try fallback
+        if (ytdlError.message.includes("rate limit") || ytdlError.message.includes("Rate exceeded")) {
+          return res.status(429).json({ error: ytdlError.message });
+        }
+
         // Robust fallback logic for UI preview if yt-dlp fails
-        const pageRes = await axios.get(targetUrl, {
-          headers: { 
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9"
-          },
-          timeout: 10000,
-        });
-        
-        const html = pageRes.data;
-        const ogTitle = html.match(/<meta property="og:title" content="(.*?)"/i) || html.match(/<title>(.*?)<\/title>/i);
-        const title = ogTitle ? ogTitle[1].replace(/&amp;/g, '&') : "Social Media Video";
-        const ogImage = html.match(/<meta property="og:image" content="(.*?)"/i);
-        const thumbnail = ogImage ? ogImage[1].replace(/&amp;/g, '&') : `https://picsum.photos/seed/${Math.random()}/800/450`;
+        try {
+          const pageRes = await axios.get(targetUrl, {
+            headers: { 
+              "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.9"
+            },
+            timeout: 10000,
+          });
+          
+          const html = pageRes.data;
+          const ogTitle = html.match(/<meta property="og:title" content="(.*?)"/i) || html.match(/<title>(.*?)<\/title>/i);
+          const title = ogTitle ? ogTitle[1].replace(/&amp;/g, '&') : "Social Media Video";
+          const ogImage = html.match(/<meta property="og:image" content="(.*?)"/i);
+          
+          // Better placeholder strategy
+          let thumbnail = ogImage ? ogImage[1].replace(/&amp;/g, '&') : "";
+          if (!thumbnail) {
+            if (targetUrl.includes("instagram.com")) thumbnail = "https://www.instagram.com/static/images/ico/favicon-200.png/ab6dea7bc453.png";
+            else if (targetUrl.includes("facebook.com")) thumbnail = "https://www.facebook.com/images/fb_icon_325x325.png";
+            else if (targetUrl.includes("tiktok.com")) thumbnail = "https://lf16-tiktok-web.ttwstatic.com/obj/tiktok-web-common-sg/mtact/static/images/logo_144c91a5.png";
+            else thumbnail = `https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800&q=80`; // Generic social media icon
+          }
 
         let directUrl = "";
         const patterns = [
@@ -215,11 +275,16 @@ async function startServer() {
         };
 
         return res.json(fallbackData);
+      } catch (fallbackError: any) {
+        console.error("Fallback extraction also failed:", fallbackError.message);
+        return res.status(500).json({ error: "Media extraction failed. The content might be private or restricted." });
       }
-    } catch (error: any) {
-      res.status(500).json({ error: "Extraction failed" });
     }
-  });
+  } catch (error: any) {
+    console.error("Global extraction error:", error);
+    res.status(500).json({ error: error.message || "Extraction failed" });
+  }
+});
 
   // API: Universal Download & Merge
   app.get("/api/download", async (req, res) => {
@@ -228,43 +293,131 @@ async function startServer() {
 
     const targetUrl = getCleanUrl(url as string);
     const jobId = crypto.randomBytes(8).toString("hex");
-    const outputFilename = `${jobId}.mp4`;
-    const outputPath = path.join(TEMP_DIR, outputFilename);
+    
+    // We'll decide the filename extension later
+    let outputFilename = `${jobId}`;
+    let outputPath = path.join(TEMP_DIR, outputFilename);
 
     try {
       console.log(`[Job ${jobId}] Starting download for:`, targetUrl);
 
       const isYoutube = targetUrl.includes("youtube.com") || targetUrl.includes("youtu.be");
       const isInstagram = targetUrl.includes("instagram.com");
+      const isTikTok = targetUrl.includes("tiktok.com");
+      const isFacebook = targetUrl.includes("facebook.com") || targetUrl.includes("fb.watch") || targetUrl.includes("fb.com");
+      const isX = targetUrl.includes("x.com") || targetUrl.includes("twitter.com");
 
       let extractorArgs = undefined;
       if (isYoutube) {
-        extractorArgs = "youtube:player-client=android,web;player-skip=webpage";
+        extractorArgs = "youtube:player-client=web_embedded,mweb,android;player-skip=webpage";
       } else if (isInstagram) {
         extractorArgs = 'instagram:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+      } else if (isTikTok) {
+        extractorArgs = 'tiktok:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+      } else if (isFacebook) {
+        extractorArgs = 'facebook:user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"';
+      } else if (isX) {
+        extractorArgs = 'twitter:user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"';
       }
+
+      const metadataRaw = await youtubeDl(targetUrl, {
+        dumpSingleJson: true,
+        noPlaylist: true,
+        noCheckCertificates: true,
+        quiet: true,
+        extractorArgs,
+        referer: isFacebook ? "https://www.facebook.com/" : (isInstagram ? "https://www.instagram.com/" : (isTikTok ? "https://www.tiktok.com/" : (isX ? "https://x.com/" : "https://www.google.com/"))),
+        addHeader: [
+          "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+          "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language: en-US,en;q=0.9",
+          "Sec-Fetch-Mode: navigate",
+          "Sec-Fetch-Site: same-origin",
+          "Sec-Fetch-Dest: document"
+        ],
+        cookies: undefined,
+      } as any);
+
+      let metadata: any;
+      try {
+        metadata = typeof metadataRaw === "string" ? JSON.parse(metadataRaw) : metadataRaw;
+      } catch (e) {
+        // If it's not JSON, it might be a rate limit or other error message
+        if (typeof metadataRaw === "string" && metadataRaw.includes("Rate exceeded")) {
+          throw new Error("Facebook/Platform rate limit exceeded. Please try again in a few minutes.");
+        }
+        throw new Error("Failed to parse metadata from platform. The content might be private or restricted.");
+      }
+
+      if (!metadata) throw new Error("No metadata returned from platform.");
+
+      const isPhoto = metadata.extractor === 'instagram:photo' || 
+                      metadata.extractor?.includes('photo') || 
+                      metadata.extractor?.includes('image') ||
+                      (metadata.formats && metadata.formats.length > 0 && metadata.formats.every((f: any) => 
+                        (!f.vcodec || f.vcodec === 'none') && 
+                        (f.ext === 'jpg' || f.ext === 'png' || f.ext === 'webp' || f.ext === 'jpeg')
+                      ));
 
       // Preferred format string
       const formatSelection = format_id 
         ? `${format_id}+bestaudio[ext=m4a]/best[ext=mp4]/best`
         : "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
 
-      await youtubeDl(targetUrl, {
-        format: formatSelection,
-        ffmpegLocation: ffmpeg || undefined,
-        output: outputPath,
-        mergeOutputFormat: "mp4",
-        noPlaylist: true,
-        noCheckCertificates: true,
-        noWarnings: true,
-        quiet: true,
-        geoBypass: true,
-        extractorArgs,
-        addHeader: [
-          "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-          "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        ]
-      } as any);
+      if (isPhoto) {
+        // Download the photo
+        const tempPhotoPath = path.join(TEMP_DIR, `${jobId}_raw`);
+        await youtubeDl(targetUrl, {
+          format: format_id || "best",
+          output: tempPhotoPath,
+          noPlaylist: true,
+          noCheckCertificates: true,
+          extractorArgs,
+          referer: isFacebook ? "https://www.facebook.com/" : (isInstagram ? "https://www.instagram.com/" : (isTikTok ? "https://www.tiktok.com/" : (isX ? "https://x.com/" : "https://www.google.com/"))),
+          addHeader: [
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept: image/avif,image/webp,*/*",
+            "Accept-Language: en-US,en;q=0.9",
+            "Sec-Fetch-Mode: no-cors",
+            "Sec-Fetch-Site: cross-site"
+          ]
+        } as any);
+
+        // Convert to PNG using ffmpeg
+        const finalPngPath = path.join(TEMP_DIR, `${jobId}.png`);
+        const { spawnSync } = await import("child_process");
+        spawnSync(ffmpeg!, ["-i", tempPhotoPath, finalPngPath], { stdio: "ignore" });
+        
+        if (fs.existsSync(tempPhotoPath)) fs.removeSync(tempPhotoPath);
+        outputPath = finalPngPath;
+        outputFilename = `${jobId}.png`;
+      } else {
+        // Download video
+        const finalVideoPath = path.join(TEMP_DIR, `${jobId}.mp4`);
+        await youtubeDl(targetUrl, {
+          format: formatSelection,
+          ffmpegLocation: ffmpeg || undefined,
+          output: finalVideoPath,
+          mergeOutputFormat: "mp4",
+          noPlaylist: true,
+          noCheckCertificates: true,
+          noWarnings: true,
+          quiet: true,
+          geoBypass: true,
+          extractorArgs,
+          referer: isFacebook ? "https://www.facebook.com/" : (isInstagram ? "https://www.instagram.com/" : (isTikTok ? "https://www.tiktok.com/" : (isX ? "https://x.com/" : "https://www.google.com/"))),
+          addHeader: [
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language: en-US,en;q=0.9",
+            "Sec-Fetch-Mode: navigate",
+            "Sec-Fetch-Dest: video",
+            "Sec-Fetch-Site: same-origin"
+          ]
+        } as any);
+        outputPath = finalVideoPath;
+        outputFilename = `${jobId}.mp4`;
+      }
 
       if (!fs.existsSync(outputPath)) {
         throw new Error("File was not created after download process.");
@@ -274,12 +427,15 @@ async function startServer() {
       const sanitizedTitle = ((title as string) || "video").replace(/[^a-zA-Z0-9\u00C0-\u017F]/g, "_");
       
       // Serve the file
-      res.setHeader("Content-Type", "video/mp4");
+      const contentType = isPhoto ? "image/png" : "video/mp4";
+      const fileExt = isPhoto ? "png" : "mp4";
+
+      res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Length", stats.size);
       res.setHeader("Accept-Ranges", "bytes");
       
       const disposition = mode === "download" ? "attachment" : "inline";
-      res.setHeader("Content-Disposition", `${disposition}; filename="${sanitizedTitle}.mp4"`);
+      res.setHeader("Content-Disposition", `${disposition}; filename="${sanitizedTitle}.${fileExt}"`);
 
       const readStream = fs.createReadStream(outputPath);
       readStream.pipe(res);
