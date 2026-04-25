@@ -69,6 +69,8 @@ interface VideoMetadata {
   webpage_url: string;
   duration?: number;
   uploader?: string;
+  mediaType?: "video" | "photo" | "carousel";
+  images?: string[];
   formats: Format[];
   extractor: string;
 }
@@ -158,8 +160,8 @@ export default function App() {
     }
   };
 
-  const handleAddUrls = useCallback((urlOverride?: string | string[]) => {
-    const sourceText = urlOverride ? (Array.isArray(urlOverride) ? urlOverride.join("\n") : urlOverride) : inputText;
+  const handleAddUrls = useCallback((urlOverride?: any) => {
+    const sourceText = String(urlOverride || inputText || "");
     if (!sourceText.trim() && activeTab !== "upload") return;
 
     let urls: string[] = [];
@@ -207,9 +209,11 @@ export default function App() {
 
   const handlePaste = async () => {
     try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        throw new Error("Clipboard API not available");
+      }
       const text = await navigator.clipboard.readText();
       if (text) {
-        // If it looks like a URL, add it instantly
         if (text.trim().startsWith("http")) {
           handleAddUrls(text.trim());
         } else {
@@ -217,7 +221,10 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error("Failed to read clipboard:", err);
+      console.warn("Clipboard access denied or unavailable. Please paste manually.");
+      // Optional: focus the input to help the user
+      const input = document.querySelector('textarea');
+      if (input) input.focus();
     }
   };
 
@@ -444,11 +451,49 @@ export default function App() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-  const startDownload = (item: DownloadItem) => {
+  const startDownload = async (item: DownloadItem) => {
     if (!item.metadata) return;
 
-    let format: Format | undefined;
+    const safeTitle = (item.metadata.title || "video")
+      .replace(/[^a-z0-9]/gi, "_")
+      .toLowerCase();
 
+    // Handle Carousel (Multiple Photos)
+    if (item.metadata.mediaType === "carousel" && item.metadata.images && item.metadata.images.length > 0) {
+      for (let i = 0; i < item.metadata.images.length; i++) {
+        const imageUrl = item.metadata.images[i];
+        const filename = `${safeTitle}_${i + 1}.jpg`;
+        const downloadUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
+        
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        if (i < item.metadata.images.length - 1) {
+          await new Promise(r => setTimeout(r, 600));
+        }
+      }
+      return;
+    }
+
+    // Handle single photo or if formats is empty but we have a thumbnail
+    if (item.metadata.mediaType === "photo" || (item.metadata.formats.length === 0 && item.metadata.thumbnail)) {
+      const imageUrl = item.metadata.thumbnail;
+      const filename = `${safeTitle}.jpg`;
+      const downloadUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    let format: Format | undefined;
     if (item.audioOnly) {
       // Find the best audio-only stream
       format = item.metadata.formats
@@ -484,10 +529,13 @@ export default function App() {
         .sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
     }
 
-    const safeTitle = (item.metadata.title || "video")
-      .replace(/[^a-z0-9]/gi, "_")
-      .toLowerCase();
-    const extension = item.audioOnly ? "mp3" : "mp4";
+    if (!format && item.metadata.formats.length > 0) {
+       format = item.metadata.formats[0];
+    }
+
+    if (!format) return;
+
+    const extension = item.audioOnly ? "mp3" : (format.ext || "mp4");
     const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(safeTitle + "." + extension)}`;
     
     // Create hidden link to trigger download safely across all devices
@@ -747,34 +795,41 @@ export default function App() {
             </div>
 
             {/* Platform Indicators - Modern Style */}
-            <div className="px-6 pb-6 pt-2 border-t border-white/5 flex flex-wrap justify-center gap-x-6 gap-y-2">
-              <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">
+            <div className="px-6 pb-8 pt-4 border-t border-white/5 flex flex-col items-center gap-6">
+              <span className="text-[10px] font-black text-gray-600 uppercase tracking-[3px]">
                 Supports Platforms:
               </span>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                  <span className="text-[9px] font-bold text-gray-500">
-                    YouTube
-                  </span>
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-x-12 gap-y-6 opacity-60">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">YouTube</span>
+                  </div>
+                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Shorts</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", theme === "dark" ? "bg-white" : "bg-black")} />
-                  <span className="text-[9px] font-bold text-gray-500">
-                    TikTok
-                  </span>
+                
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <div className={cn("w-1.5 h-1.5 rounded-full", theme === "dark" ? "bg-white" : "bg-black")} />
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">TikTok</span>
+                  </div>
+                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Photos</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
-                  <span className="text-[9px] font-bold text-gray-500">
-                    Instagram
-                  </span>
+
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Instagram</span>
+                  </div>
+                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Reels & Photos</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                  <span className="text-[9px] font-bold text-gray-500">
-                    Facebook
-                  </span>
+
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Facebook</span>
+                  </div>
+                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Reels</span>
                 </div>
               </div>
             </div>
@@ -808,7 +863,7 @@ export default function App() {
 
                 <div className="flex flex-col sm:flex-row">
                   {/* Compact Thumbnail Container */}
-                  <div className="sm:w-64 aspect-video sm:aspect-square relative flex-shrink-0 bg-black/40 overflow-hidden">
+                  <div className="sm:w-64 aspect-video sm:aspect-square relative flex-shrink-0 bg-black/40 overflow-hidden group/carousel">
                     {previewId === item.id ? (
                       <video
                         src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter((f) => f.vcodec !== "none")[0]?.url || item.url)}`}
@@ -816,6 +871,29 @@ export default function App() {
                         controls
                         autoPlay
                       />
+                    ) : item.metadata?.mediaType === "carousel" ? (
+                      <div className="relative w-full h-full">
+                        <div className="flex w-full h-full overflow-x-auto scroll-smooth snap-x snap-mandatory hide-scrollbar">
+                          {item.metadata.images?.map((img, idx) => (
+                            <div key={idx} className="w-full h-full flex-shrink-0 snap-start">
+                              <img
+                                src={img}
+                                className="w-full h-full object-cover"
+                                alt={`Carousel ${idx + 1}`}
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+                          {item.metadata.images?.map((_, idx) => (
+                            <div key={idx} className="w-1 h-1 rounded-full bg-white/50" />
+                          ))}
+                        </div>
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[8px] font-black text-white uppercase tracking-widest">
+                           {item.metadata.images?.length} Photos
+                        </div>
+                      </div>
                     ) : (
                       <>
                         <img
@@ -826,14 +904,16 @@ export default function App() {
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-70"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => setPreviewId(item.id)}
-                            className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110 active:scale-95"
-                          >
-                            <Play className="w-6 h-6 fill-current ml-1" />
-                          </button>
-                        </div>
+                        {item.metadata?.mediaType !== "photo" && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => setPreviewId(item.id)}
+                              className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110 active:scale-95"
+                            >
+                              <Play className="w-6 h-6 fill-current ml-1" />
+                            </button>
+                          </div>
+                        )}
                       </>
                     )}
                     
@@ -888,11 +968,10 @@ export default function App() {
                             </button>
                           </div>
                         )}
-                        
-                        {item.status === "ready" && (
+                                               {item.status === "ready" && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {/* Quality Select - Conditionally shown */}
-                            {(detectPlatform(item.url) === "youtube" && !item.url.includes("/shorts/")) && (
+                            {/* Quality Select / Media Info */}
+                            {(item.metadata?.mediaType === "video" && detectPlatform(item.url) === "youtube" && !item.url.includes("/shorts/")) ? (
                               <div className={cn(
                                 "rounded-xl p-3 border",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
@@ -918,7 +997,17 @@ export default function App() {
                                     ))}
                                 </select>
                               </div>
-                            )}
+                            ) : item.metadata?.mediaType !== "video" ? (
+                              <div className={cn(
+                                "rounded-xl p-3 border flex flex-col justify-center",
+                                theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                              )}>
+                                <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
+                                <span className="text-xs font-black uppercase tracking-widest text-indigo-400">
+                                  {item.metadata?.mediaType === "carousel" ? "COLLECTION" : "HIGH-RES PHOTO"}
+                                </span>
+                              </div>
+                            ) : null}
 
                             {/* Mode Toggle */}
                             <div className={cn(
@@ -929,18 +1018,22 @@ export default function App() {
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => toggleAudioOnly(item.id)}
+                                  disabled={item.metadata?.mediaType !== "video"}
                                   className={cn(
                                     "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                    !item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400"
+                                    (!item.audioOnly && item.metadata?.mediaType === "video") ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400",
+                                    item.metadata?.mediaType !== "video" && "opacity-30 cursor-not-allowed"
                                   )}
                                 >
                                   VIDEO
                                 </button>
                                 <button
                                   onClick={() => toggleAudioOnly(item.id)}
+                                  disabled={item.metadata?.mediaType !== "video"}
                                   className={cn(
                                     "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                    item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400"
+                                    item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400",
+                                    item.metadata?.mediaType !== "video" && "opacity-30 cursor-not-allowed"
                                   )}
                                 >
                                   AUDIO

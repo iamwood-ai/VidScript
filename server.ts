@@ -79,15 +79,32 @@ async function startServer() {
         
         const extractedVideoUrl = ogVideo ? ogVideo[1].replace(/&amp;/g, '&') : url;
 
+        // Identify Media Type
+        let mediaType: "video" | "photo" | "carousel" = "video";
+        const images: string[] = [];
+        
+        if (url.includes("instagram.com/p/") || url.includes("instagram.com/reels/") || url.includes("facebook.com") || url.includes("tiktok.com")) {
+          // Look for multiple images in meta tags for carousels
+          const allImages = [...html.matchAll(/<meta property="og:image" content="(.*?)"/gi)].map(m => m[1].replace(/&amp;/g, '&'));
+          if (allImages.length > 1) {
+            mediaType = "carousel";
+            images.push(...allImages);
+          } else if (html.includes('type="image"') || html.includes('property="og:type" content="image"')) {
+            mediaType = "photo";
+          }
+        }
+
         const fallbackData = {
           title: title.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
           thumbnail: thumbnail.replace(/&amp;/g, '&'),
           uploader: url.split('/')[2].replace('www.', ''),
           extractor: url.includes('youtube') ? 'youtube' : (url.includes('tiktok') ? 'tiktok' : (url.includes('instagram') ? 'instagram' : (url.includes('facebook') ? 'facebook' : 'video'))),
           description: (description || "").substring(0, 200).replace(/&amp;/g, '&'),
-          formats: [
+          mediaType,
+          images,
+          formats: mediaType === "video" ? [
             { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "Compatible Format", quality: 10 }
-          ],
+          ] : [],
           webpage_url: url
         };
 
