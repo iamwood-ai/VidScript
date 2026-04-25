@@ -943,7 +943,11 @@ export default function App() {
                               )}>
                                 <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
                                 <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
-                                  {item.metadata?.mediaType === "photo" ? "PHOTO CONTENT" : item.metadata?.mediaType === "carousel" ? "CAROUSEL POST" : "VIDEO CONTENT"}
+                                  {(() => {
+                                    const platform = detectPlatform(item.url);
+                                    if (platform === "instagram") return "REELS";
+                                    return "VIDEO";
+                                  })()}
                                 </span>
                               </div>
                             )}

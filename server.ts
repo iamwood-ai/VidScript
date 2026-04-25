@@ -50,6 +50,8 @@ async function startServer() {
       try {
         const isFacebook = url.includes("facebook.com") || url.includes("fb.watch") || url.includes("fb.com");
         const isX = url.includes("x.com") || url.includes("twitter.com");
+        const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
+        const isInstagram = url.includes("instagram.com");
         
         const outputRaw = await youtubeDl(url, {
           format: "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
@@ -59,12 +61,16 @@ async function startServer() {
           noPlaylist: true,
           flatPlaylist: true,
           quiet: true,
-          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (url.includes("instagram.com") ? "https://www.instagram.com/" : (url.includes("tiktok.com") ? "https://www.tiktok.com/" : url))),
+          geoBypass: true,
+          extractorArgs: isYoutube 
+            ? "youtube:player-client=web,mweb" 
+            : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
+          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (url.includes("tiktok.com") ? "https://www.tiktok.com/" : url))),
           addHeader: [
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
             "Accept-Language: en-US,en;q=0.9",
           ]
-        });
+        } as any);
 
         const output = outputRaw as any;
 
@@ -171,6 +177,9 @@ async function startServer() {
         ? `${format_id}+bestaudio[ext=m4a]/best[ext=mp4]/best`
         : "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
 
+      const isYoutube = (url as string).includes("youtube.com") || (url as string).includes("youtu.be");
+      const isInstagram = (url as string).includes("instagram.com");
+
       await youtubeDl(url as string, {
         format: formatSelection,
         ffmpegLocation: ffmpeg || undefined,
@@ -180,10 +189,14 @@ async function startServer() {
         noCheckCertificates: true,
         noWarnings: true,
         quiet: true,
+        geoBypass: true,
+        extractorArgs: isYoutube 
+          ? "youtube:player-client=web,mweb" 
+          : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1\"" : undefined),
         addHeader: [
           "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         ]
-      });
+      } as any);
 
       if (!fs.existsSync(outputPath)) {
         throw new Error("File was not created after download process.");
