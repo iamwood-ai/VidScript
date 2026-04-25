@@ -16,6 +16,25 @@ const __dirname = path.dirname(__filename);
 const TEMP_DIR = path.join(process.cwd(), "temp_downloads");
 fs.ensureDirSync(TEMP_DIR);
 
+// Helper to clean URLs (Crucial for Instagram)
+function getCleanUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    // Remove query parameters that break yt-dlp for Instagram
+    if (parsed.hostname.includes("instagram.com")) {
+      parsed.search = ""; 
+    }
+    // For YouTube, ensure we keep the 'v' parameter but drop tracking
+    if (parsed.hostname.includes("youtube.com") && parsed.searchParams.has("v")) {
+      const v = parsed.searchParams.get("v");
+      parsed.search = `?v=${v}`;
+    }
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -46,14 +65,23 @@ async function startServer() {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: "URL is required" });
 
+    const targetUrl = getCleanUrl(url);
+
     try {
       try {
-        const isFacebook = url.includes("facebook.com") || url.includes("fb.watch") || url.includes("fb.com");
-        const isX = url.includes("x.com") || url.includes("twitter.com");
-        const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
-        const isInstagram = url.includes("instagram.com");
+        const isFacebook = targetUrl.includes("facebook.com") || targetUrl.includes("fb.watch") || targetUrl.includes("fb.com");
+        const isX = targetUrl.includes("x.com") || targetUrl.includes("twitter.com");
+        const isYoutube = targetUrl.includes("youtube.com") || targetUrl.includes("youtu.be");
+        const isInstagram = targetUrl.includes("instagram.com");
         
-        const outputRaw = await youtubeDl(url, {
+        let extractorArgs = undefined;
+        if (isYoutube) {
+          extractorArgs = "youtube:player-client=android,web;player-skip=webpage";
+        } else if (isInstagram) {
+          extractorArgs = 'instagram:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+        }
+
+        const outputRaw = await youtubeDl(targetUrl, {
           format: "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
           dumpSingleJson: true,
           noWarnings: true,
@@ -62,23 +90,22 @@ async function startServer() {
           flatPlaylist: true,
           quiet: true,
           geoBypass: true,
-          extractorArgs: isYoutube 
-            ? "youtube:player-client=web,mweb" 
-            : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\"" : undefined),
-          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (url.includes("tiktok.com") ? "https://www.tiktok.com/" : url))),
+          extractorArgs,
+          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : (isInstagram ? "https://www.instagram.com/" : (targetUrl.includes("tiktok.com") ? "https://www.tiktok.com/" : targetUrl))),
           addHeader: [
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language: en-US,en;q=0.9",
+            "Sec-Fetch-Mode: navigate"
           ]
         } as any);
 
         const output = outputRaw as any;
 
         // Map formats to a cleaner structure that the frontend expects
-        // But for each format, we proxy through /api/download to ensure universal compatibility
         const mappedFormats = (output.formats || []).map((f: any) => ({
           format_id: f.format_id,
-          url: `/api/download?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(f.format_id)}&title=${encodeURIComponent(output.title || "video")}`,
+          url: `/api/download?url=${encodeURIComponent(targetUrl)}&format_id=${encodeURIComponent(f.format_id)}&title=${encodeURIComponent(output.title || "video")}`,
           ext: "mp4",
           height: f.height,
           vcodec: f.vcodec,
@@ -92,7 +119,7 @@ async function startServer() {
         if (mappedFormats.length === 0) {
           mappedFormats.push({
             format_id: "universal",
-            url: `/api/download?url=${encodeURIComponent(url)}&title=${encodeURIComponent(output.title || "video")}`,
+            url: `/api/download?url=${encodeURIComponent(targetUrl)}&title=${encodeURIComponent(output.title || "video")}`,
             ext: "mp4",
             note: "Universal Quality (Best Compatible)",
             vcodec: "h264",
@@ -104,21 +131,21 @@ async function startServer() {
           id: output.id,
           title: output.title,
           thumbnail: output.thumbnail,
-          uploader: output.uploader || output.uploader_id || url.split('/')[2].replace('www.', ''),
+          uploader: output.uploader || output.uploader_id || targetUrl.split('/')[2].replace('www.', ''),
           extractor: output.extractor_key?.toLowerCase() || "",
           duration: output.duration || 0,
           description: (output.description || "").substring(0, 200),
           mediaType: "video",
           formats: mappedFormats,
-          webpage_url: output.webpage_url || url
+          webpage_url: output.webpage_url || targetUrl
         };
 
         return res.json(cleanedData);
       } catch (ytdlError: any) {
-        console.warn("yt-dlp extraction failed, using fallback...");
+        console.warn("yt-dlp extraction failed, using fallback:", ytdlError.message);
         
         // Robust fallback logic for UI preview if yt-dlp fails
-        const pageRes = await axios.get(url, {
+        const pageRes = await axios.get(targetUrl, {
           headers: { 
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -133,7 +160,6 @@ async function startServer() {
         const ogImage = html.match(/<meta property="og:image" content="(.*?)"/i);
         const thumbnail = ogImage ? ogImage[1].replace(/&amp;/g, '&') : `https://picsum.photos/seed/${Math.random()}/800/450`;
 
-        // Extract raw video URL from HTML for direct fallback
         let directUrl = "";
         const patterns = [
           /"video_url":"([^"]+)"/,
@@ -157,7 +183,7 @@ async function startServer() {
         const formats = [
           { 
             format_id: "universal", 
-            url: `/api/download?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`, 
+            url: `/api/download?url=${encodeURIComponent(targetUrl)}&title=${encodeURIComponent(title)}`, 
             ext: "mp4", 
             note: "Universal Quality", 
             vcodec: "h264", 
@@ -179,13 +205,13 @@ async function startServer() {
         const fallbackData = {
           title: title,
           thumbnail: thumbnail,
-          uploader: url.split('/')[2].replace('www.', ''),
+          uploader: targetUrl.split('/')[2].replace('www.', ''),
           extractor: "video",
           duration: 0,
           description: "Video identified via backup scanner.",
           mediaType: "video",
           formats: formats,
-          webpage_url: url
+          webpage_url: targetUrl
         };
 
         return res.json(fallbackData);
@@ -200,22 +226,30 @@ async function startServer() {
     const { url, format_id, title, mode } = req.query;
     if (!url) return res.status(400).send("URL is required");
 
+    const targetUrl = getCleanUrl(url as string);
     const jobId = crypto.randomBytes(8).toString("hex");
     const outputFilename = `${jobId}.mp4`;
     const outputPath = path.join(TEMP_DIR, outputFilename);
 
     try {
-      console.log(`[Job ${jobId}] Starting download for:`, url);
+      console.log(`[Job ${jobId}] Starting download for:`, targetUrl);
 
-      const isYoutube = (url as string).includes("youtube.com") || (url as string).includes("youtu.be");
-      const isInstagram = (url as string).includes("instagram.com");
+      const isYoutube = targetUrl.includes("youtube.com") || targetUrl.includes("youtu.be");
+      const isInstagram = targetUrl.includes("instagram.com");
+
+      let extractorArgs = undefined;
+      if (isYoutube) {
+        extractorArgs = "youtube:player-client=android,web;player-skip=webpage";
+      } else if (isInstagram) {
+        extractorArgs = 'instagram:user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"';
+      }
 
       // Preferred format string
       const formatSelection = format_id 
         ? `${format_id}+bestaudio[ext=m4a]/best[ext=mp4]/best`
         : "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
 
-      await youtubeDl(url as string, {
+      await youtubeDl(targetUrl, {
         format: formatSelection,
         ffmpegLocation: ffmpeg || undefined,
         output: outputPath,
@@ -225,11 +259,10 @@ async function startServer() {
         noWarnings: true,
         quiet: true,
         geoBypass: true,
-        extractorArgs: isYoutube 
-          ? "youtube:player-client=web,mweb" 
-          : (isInstagram ? "instagram:user_agent=\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\"" : undefined),
+        extractorArgs,
         addHeader: [
           "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+          "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         ]
       } as any);
 
@@ -238,7 +271,7 @@ async function startServer() {
       }
 
       const stats = fs.statSync(outputPath);
-      const sanitizedTitle = ((title as string) || "video").replace(/[^a-zA-Z0-9]/g, "_");
+      const sanitizedTitle = ((title as string) || "video").replace(/[^a-zA-Z0-9\u00C0-\u017F]/g, "_");
       
       // Serve the file
       res.setHeader("Content-Type", "video/mp4");
@@ -274,14 +307,11 @@ async function startServer() {
     }
   });
 
-  // Keep legacy proxy for non-video assets if needed, but primary is /api/download
+  // Proxy for non-video assets or direct fallback streams
   app.get("/api/proxy", async (req, res) => {
-    // Keep this for thumbnails or other bypasses, but main video uses /api/download
     const { url, filename, mode } = req.query;
     if (!url) return res.status(400).send("URL is required");
-    // ... existing proxy logic ...
 
-    // Block local/internal URLs
     if ((url as string).includes("localhost") || (url as string).includes("127.0.0.1")) {
       return res.status(403).send("Forbidden");
     }
@@ -295,7 +325,6 @@ async function startServer() {
       const isTwitter = urlStr.includes("twitter.com") || urlStr.includes("x.com") || urlStr.includes("twimg.com");
       const isYoutube = urlStr.includes("youtube.com") || urlStr.includes("googlevideo.com");
       
-      // High-compatibility headers for streaming media platforms
       const headers: any = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         "Accept": "*/*",
@@ -337,20 +366,16 @@ async function startServer() {
       });
 
       const contentTypeHeader = String(response.headers["content-type"] || "video/mp4");
-      
-      // Determine final content type for browser/player
       const finalContentType = (contentTypeHeader.startsWith("video/") || contentTypeHeader.startsWith("audio/")) 
         ? contentTypeHeader 
         : "video/mp4";
 
-      // Set broad compatibility headers
       let sanitizedFilename = (filename as string || "file").replace(/[^a-zA-Z0-9.\-_]/g, "_");
       
       if (!sanitizedFilename.toLowerCase().endsWith(".mp4")) {
         sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp4";
       }
 
-      // Hardened Compatibility Headers for Mobile & Desktop Players
       res.setHeader("Accept-Ranges", "bytes");
       res.setHeader("Content-Type", finalContentType);
       res.setHeader("X-Content-Type-Options", "nosniff");
@@ -378,7 +403,6 @@ async function startServer() {
         res.status(response.status);
       }
 
-      // Stream piping
       response.data.pipe(res);
 
       response.data.on("error", (err: any) => {
