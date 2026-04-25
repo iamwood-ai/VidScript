@@ -175,7 +175,7 @@ export default function App() {
     } else if (activeTab === "upload" && uploadFile) {
       // Handle file upload pseudo-item
       const newItem: DownloadItem = {
-        id: Math.random().toString(36).substring(7),
+        id: "vid_" + Math.random().toString(36).substring(2, 11),
         url: "local-file",
         status: "ready",
         audioOnly: false,
@@ -194,7 +194,7 @@ export default function App() {
     }
 
     const newItems: DownloadItem[] = urls.map((url) => ({
-      id: Math.random().toString(36).substring(7),
+      id: "vid_" + Math.random().toString(36).substring(2, 11),
       url,
       status: "idle",
       audioOnly: false,
@@ -794,7 +794,7 @@ export default function App() {
                 {/* Remove Button - Absolute */}
                 <button
                   onClick={() => removeItem(item.id)}
-                  className="absolute top-4 right-4 z-10 p-2 bg-black/40 hover:bg-red-500/20 text-gray-500 hover:text-red-500 rounded-xl backdrop-blur transition-all active:scale-90"
+                  className="absolute top-4 right-4 z-10 p-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-xl backdrop-blur transition-all active:scale-90 border border-red-500/20"
                   title="Remove Item"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -948,6 +948,13 @@ export default function App() {
 
                     {/* Bottom Action Section */}
                     <div className="flex items-center gap-2 mt-auto">
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="flex-1 h-12 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl flex items-center justify-center transition-all active:scale-95 font-black text-[10px] tracking-widest gap-2"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> REMOVE
+                      </button>
                       <button
                         onClick={() => window.open(item.url, "_blank")}
                         className="flex-1 h-12 border border-indigo-500/10 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center transition-all active:scale-95"

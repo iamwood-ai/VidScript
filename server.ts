@@ -119,13 +119,16 @@ async function startServer() {
       const isFacebook = urlStr.includes("facebook.com") || urlStr.includes("fbcdn.net");
       const isTikTok = urlStr.includes("tiktok.com") || urlStr.includes("tiktokv.com");
       
-      // High-compatibility mobile headers to prevent "403 Forbidden" or small error files
+      // High-compatibility headers for streaming media platforms
       const headers: any = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Accept": "*/*",
+        "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
         "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
-        "Accept-Encoding": "identity", // Important to keep binary stream raw
+        "Accept-Encoding": "identity", // Force raw stream
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Dest": "video",
       };
 
       if (isInstagram) {
@@ -133,9 +136,9 @@ async function startServer() {
         headers["Origin"] = "https://www.instagram.com";
       } else if (isFacebook) {
         headers["Referer"] = "https://www.facebook.com/";
-        headers["Origin"] = "https://www.facebook.com";
       } else if (isTikTok) {
         headers["Referer"] = "https://www.tiktok.com/";
+        headers["Sec-Fetch-Dest"] = "video";
       }
 
       if (range) {
