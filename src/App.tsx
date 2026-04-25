@@ -795,41 +795,34 @@ export default function App() {
             </div>
 
             {/* Platform Indicators - Modern Style */}
-            <div className="px-6 pb-8 pt-4 border-t border-white/5 flex flex-col items-center gap-6">
-              <span className="text-[10px] font-black text-gray-600 uppercase tracking-[3px]">
+            <div className="px-6 pb-6 pt-2 border-t border-white/5 flex flex-wrap justify-center gap-x-6 gap-y-2">
+              <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">
                 Supports Platforms:
               </span>
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-x-12 gap-y-6 opacity-60">
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">YouTube</span>
-                  </div>
-                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Shorts</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  <span className="text-[9px] font-bold text-gray-500">
+                    YouTube
+                  </span>
                 </div>
-                
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-2">
-                    <div className={cn("w-1.5 h-1.5 rounded-full", theme === "dark" ? "bg-white" : "bg-black")} />
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">TikTok</span>
-                  </div>
-                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Photos</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={cn("w-1.5 h-1.5 rounded-full", theme === "dark" ? "bg-white" : "bg-black")} />
+                  <span className="text-[9px] font-bold text-gray-500">
+                    TikTok
+                  </span>
                 </div>
-
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Instagram</span>
-                  </div>
-                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Reels & Photos</span>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-pink-500" />
+                  <span className="text-[9px] font-bold text-gray-500">
+                    Instagram
+                  </span>
                 </div>
-
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Facebook</span>
-                  </div>
-                  <span className="text-[8px] text-gray-600 font-medium whitespace-nowrap">Videos & Reels</span>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                  <span className="text-[9px] font-bold text-gray-500">
+                    Facebook
+                  </span>
                 </div>
               </div>
             </div>
