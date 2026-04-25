@@ -158,16 +158,17 @@ export default function App() {
     }
   };
 
-  const handleAddUrls = useCallback(() => {
-    if (!inputText.trim() && activeTab !== "upload") return;
+  const handleAddUrls = useCallback((urlOverride?: string | string[]) => {
+    const sourceText = urlOverride ? (Array.isArray(urlOverride) ? urlOverride.join("\n") : urlOverride) : inputText;
+    if (!sourceText.trim() && activeTab !== "upload") return;
 
     let urls: string[] = [];
 
     if (activeTab === "single") {
-      const match = inputText.match(/https?:\/\/[^\s,]+/);
+      const match = sourceText.match(/https?:\/\/[^\s,]+/);
       if (match) urls = [match[0]];
     } else if (activeTab === "batch") {
-      urls = inputText
+      urls = sourceText
         .split(/\n|,| /)
         .map((url) => url.trim())
         .filter((url) => url.startsWith("http"))
@@ -208,7 +209,12 @@ export default function App() {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setInputText((prev) => (prev ? `${prev}\n${text}` : text));
+        // If it looks like a URL, add it instantly
+        if (text.trim().startsWith("http")) {
+          handleAddUrls(text.trim());
+        } else {
+          setInputText((prev) => (prev ? `${prev}\n${text}` : text));
+        }
       }
     } catch (err) {
       console.error("Failed to read clipboard:", err);
@@ -583,9 +589,9 @@ export default function App() {
 
         <section className="text-center mb-8">
           <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
           >
             <h3
               className={cn(

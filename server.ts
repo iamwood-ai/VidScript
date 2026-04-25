@@ -149,16 +149,23 @@ async function startServer() {
         method: "get",
         url: urlStr,
         responseType: "stream",
-        timeout: 60000, // 1 minute
+        timeout: 90000, // Increase to 90s for large files
         maxRedirects: 10,
         headers,
-        validateStatus: (status) => status < 400, // Reject 403, 404, 500 immediately
+        validateStatus: (status) => status < 400,
       });
 
       // Verification: Check if it's actually media or an error page
       const contentTypeHeader = String(response.headers["content-type"] || "");
+      const contentLengthHeader = parseInt(String(response.headers["content-length"] || "0"), 10);
+
       if (contentTypeHeader.includes("text/html") && !urlStr.includes(".m3u8")) {
-         throw new Error("Target platform returned HTML instead of media stream. Access might be blocked.");
+         throw new Error("Target platform returned HTML instead of media stream.");
+      }
+      
+      // If content length is suspiciously small (e.g. < 500 bytes), it's likely an error message
+      if (contentLengthHeader > 0 && contentLengthHeader < 500) {
+        throw new Error("Media source provided an invalid or empty stream.");
       }
 
       // Set broad compatibility headers-
