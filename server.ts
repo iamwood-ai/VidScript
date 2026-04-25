@@ -136,6 +136,7 @@ async function startServer() {
                            extractedVideoUrl.startsWith("http") && 
                            !extractedVideoUrl.includes("instagram.com/p/") && 
                            !extractedVideoUrl.includes("tiktok.com/@") &&
+                           !extractedVideoUrl.includes("facebook.com/watch") &&
                            extractedVideoUrl !== url;
 
         if (!isValidMedia) {
@@ -151,11 +152,12 @@ async function startServer() {
           thumbnail: thumbnail.replace(/&amp;/g, '&'),
           uploader: url.split('/')[2].replace('www.', ''),
           extractor: lowUrl.includes('youtube') ? 'youtube' : (lowUrl.includes('tiktok') ? 'tiktok' : (lowUrl.includes('instagram') ? 'instagram' : (lowUrl.includes('facebook') ? 'facebook' : (lowUrl.includes('twitter.com') || lowUrl.includes('x.com') ? 'twitter' : 'video')))),
+          duration: 0,
           description: (description || "").substring(0, 200).replace(/&amp;/g, '&'),
           mediaType,
           images,
           formats: mediaType === "video" && isValidMedia ? [
-            { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "H.264 MP4", quality: 10 }
+            { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "Mobile Compatible MP4", quality: 10 }
           ] : [],
           webpage_url: url
         };
@@ -208,7 +210,7 @@ async function startServer() {
         headers["Referer"] = "https://www.facebook.com/";
       } else if (isTikTok) {
         headers["Referer"] = "https://www.tiktok.com/";
-        headers["Sec-Fetch-Dest"] = "video";
+        headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
       } else if (isTwitter) {
         headers["Referer"] = "https://x.com/";
       }
@@ -266,7 +268,12 @@ async function startServer() {
         if (!sanitizedFilename.toLowerCase().endsWith(".mp4")) {
           sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp4";
         }
-        finalContentType = "video/mp4";
+        // Strongly force video/mp4 for these platforms to ensure QuickTime recognizes them
+        if (isInstagram || isFacebook || isTikTok || isTwitter || (urlStr as string).includes("youtube.com")) {
+          finalContentType = "video/mp4";
+        } else {
+          finalContentType = contentTypeHeader.includes("video") ? contentTypeHeader : "video/mp4";
+        }
       }
 
       // Hardened Compatibility Headers for Mobile & Desktop Players
@@ -276,9 +283,11 @@ async function startServer() {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "public, max-age=3600");
       res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`,
+        `attachment; filename="${sanitizedFilename}"`,
       );
 
       if (response.headers["content-length"]) {

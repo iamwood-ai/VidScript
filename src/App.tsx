@@ -378,12 +378,13 @@ export default function App() {
         LANGUAGES SUPPORTED: English, Spanish, French, German, Russian, Italian, Japanese, Chinese, Korean.
         
         CRITICAL RULES:
-        1. NO INTRO/OUTRO: Do not add any introduction or metadata like "Title:". Start immediately with the first spoken word.
-        2. WORD-FOR-WORD: Transcribe exactly what is heard. No summaries, no commentary.
-        3. NO SPEECH CASE: If no human speech is detected, output ONLY: "You can't transcript this video because it contains no human speech or is inaccessible."
-        4. NO AI MENTION: Never mention being an AI.
+        1. LANGUAGE DETECTION: Listen to the audio and detect the primary language SPOKEN. You MUST output the transcript in that EXACT same language. If English is spoken, output English. If Spanish is spoken, output Spanish.
+        2. NO COMMENTARY: Do not add titles, intros, or "Here is the transcript". Start immediately with the first spoken word.
+        3. WORD-FOR-WORD: Transcribe exactly what is heard. No summaries, no paraphrasing.
+        4. NO HALLUCINATION: If the video is short, the transcript must be short. Do not invent text. 
+        5. NO SPEECH CASE: If no human speech is detected, output ONLY: "You can't transcript this video because it contains no human speech or is inaccessible."
         
-        Start directly with the content. Use Markdown for paragraphs only.`;
+        Output the spoken content ONLY. Use Markdown for paragraphs.`;
 
       try {
         const result = await ai.models.generateContent({
@@ -898,10 +899,15 @@ export default function App() {
                   <div className="sm:w-64 aspect-video sm:aspect-square relative flex-shrink-0 bg-black/40 overflow-hidden group/carousel">
                     {previewId === item.id ? (
                       <video
-                        src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter((f: any) => f.vcodec !== "none")[0]?.url || item.url)}`}
+                        src={(() => {
+                          const directFormat = item.metadata?.formats.find((f: any) => f.vcodec !== "none" || f.format_id === "direct");
+                          const videoUrl = directFormat?.url || item.metadata?.formats[0]?.url;
+                          return videoUrl ? `/api/proxy?url=${encodeURIComponent(videoUrl)}&filename=preview.mp4` : item.url;
+                        })()}
                         className="w-full h-full object-contain"
                         controls
                         autoPlay
+                        playsInline
                       />
                     ) : item.metadata?.mediaType === "carousel" ? (
                       <div className="relative w-full h-full">
@@ -1042,9 +1048,39 @@ export default function App() {
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
                               )}>
                                 <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
-                                <span className="text-xs font-black uppercase tracking-widest text-indigo-400">
+                                <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
                                   {item.metadata?.mediaType === "photo" ? "PHOTO CONTENT" : item.metadata?.mediaType === "carousel" ? "CAROUSEL POST" : "VIDEO CONTENT"}
                                 </span>
+                              </div>
+                            )}
+
+                            {/* Mode Toggle - Only for videos */}
+                            {item.metadata?.mediaType === "video" && (
+                              <div className={cn(
+                                "rounded-xl p-3 border",
+                                theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                              )}>
+                                <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">AI MAGIC MODE</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => toggleAudioOnly(item.id)}
+                                    className={cn(
+                                      "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
+                                      !item.audioOnly ? "bg-[#FF1493] text-white shadow-lg shadow-[#FF1493]/20" : "text-gray-500 hover:text-gray-400"
+                                    )}
+                                  >
+                                    TRANSCRIPT
+                                  </button>
+                                  <button
+                                    onClick={() => toggleAudioOnly(item.id)}
+                                    className={cn(
+                                      "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
+                                      item.audioOnly ? "bg-[#FF1493] text-white shadow-lg shadow-[#FF1493]/20" : "text-gray-500 hover:text-gray-400"
+                                    )}
+                                  >
+                                    AUDIO ONLY
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1067,15 +1103,16 @@ export default function App() {
                         className={cn(
                           "flex-1 h-12 border rounded-xl flex items-center justify-center transition-all",
                           theme === "dark"
-                            ? "bg-white/5 border-white/10 hover:bg-white/10"
-                            : "bg-gray-50 border-gray-200 hover:bg-gray-100",
+                            ? "bg-[#FF1493]/10 border-[#FF1493]/20 text-[#FF1493] hover:bg-[#FF1493]/20"
+                            : "bg-[#FF1493]/5 border-[#FF1493]/20 text-[#FF1493] hover:bg-[#FF1493]/10",
+                          (item.status !== "ready" || item.isTranscribing) && "opacity-50 cursor-not-allowed"
                         )}
                         title="AI Magic Transcript"
                       >
                         {item.isTranscribing ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <Sparkles className="w-4 h-4 text-indigo-400" />
+                          <Sparkles className="w-4 h-4" />
                         )}
                       </button>
                       <button
