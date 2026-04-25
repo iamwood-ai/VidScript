@@ -182,6 +182,7 @@ async function startServer() {
       res.setHeader("Content-Type", finalContentType);
       res.setHeader("Content-Transfer-Encoding", "binary");
       res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour for mobile players
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`,

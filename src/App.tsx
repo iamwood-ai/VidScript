@@ -148,7 +148,9 @@ export default function App() {
       case "tiktok":
         return (
           <div className={cn("bg-black rounded-lg p-1.5 flex items-center justify-center border border-white/20", size)}>
-            <div className="text-white font-black italic scale-75">TT</div>
+            <svg viewBox="0 0 24 24" className="w-full h-full fill-white" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.6-4.13-1.47-.23-.15-.44-.31-.65-.47.01 2.21.01 4.41.01 6.62 0 1.34-.14 2.7-.68 3.93-.65 1.52-1.9 2.78-3.41 3.44-1.43.62-3.08.73-4.59.42-1.45-.31-2.81-1.12-3.79-2.22C4.1 18.91 3.5 17.22 3.5 15.5c0-1.63.53-3.23 1.5-4.52.92-1.22 2.24-2.14 3.73-2.5 1.1-.28 2.26-.26 3.36.03V12.7c-.8-.22-1.68-.22-2.45.1-.9.37-1.59 1.15-1.9 2.07-.33.99-.21 2.12.33 3.03.49.82 1.35 1.41 2.28 1.6 1.05.21 2.24-.04 3.08-.74.65-.54.99-1.37.99-2.21V.02z" />
+            </svg>
           </div>
         );
       default:
@@ -481,7 +483,14 @@ export default function App() {
       .toLowerCase();
     const extension = item.audioOnly ? "mp3" : "mp4";
     const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(safeTitle + "." + extension)}`;
-    window.location.assign(downloadUrl);
+    
+    // Create hidden link to trigger download safely across all devices
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.setAttribute("download", safeTitle + "." + extension);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Auto-extract idle items
@@ -683,7 +692,7 @@ export default function App() {
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     placeholder="Paste a video URL…"
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm sm:text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap p-0 leading-[24px]"
+                    className="flex-1 bg-transparent border-none focus:ring-0 text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap p-0 leading-[24px]"
                     onKeyDown={(e) =>
                       !e.shiftKey &&
                       e.key === "Enter" &&
@@ -744,7 +753,7 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", theme === "dark" ? "bg-white" : "bg-black")} />
                   <span className="text-[9px] font-bold text-gray-500">
                     TikTok
                   </span>
@@ -884,7 +893,7 @@ export default function App() {
                               )}>
                                 <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">QUALITY</span>
                                 <select
-                                  className="w-full bg-transparent text-xs font-bold focus:outline-none appearance-none cursor-pointer"
+                                  className="w-full bg-transparent text-base font-bold focus:outline-none appearance-none cursor-pointer"
                                   value={item.selectedQuality}
                                   onChange={(e) => setQuality(item.id, e.target.value)}
                                 >
