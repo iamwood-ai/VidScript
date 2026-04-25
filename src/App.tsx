@@ -72,7 +72,6 @@ interface VideoMetadata {
   duration?: number;
   uploader?: string;
   mediaType?: "video" | "photo" | "carousel";
-  images?: string[];
   formats: Format[];
   extractor: string;
 }
@@ -83,7 +82,6 @@ interface DownloadItem {
   status: "idle" | "loading" | "ready" | "error";
   metadata?: VideoMetadata;
   error?: string;
-  audioOnly: boolean;
   selectedQuality?: string;
   transcriptNormal?: string;
   transcriptTimeline?: string;
@@ -195,7 +193,6 @@ export default function App() {
         id: "vid_" + Math.random().toString(36).substring(2, 11),
         url: "local-file",
         status: "ready",
-        audioOnly: false,
         metadata: {
           id: "upload",
           title: uploadFile.name,
@@ -214,7 +211,6 @@ export default function App() {
       id: "vid_" + Math.random().toString(36).substring(2, 11),
       url,
       status: "idle",
-      audioOnly: false,
     }));
 
     setItems((prev) => [...newItems, ...prev]);
@@ -273,28 +269,21 @@ export default function App() {
                 status: "ready",
                 metadata: data,
                 selectedQuality: (() => {
-                  const allFormats = data.formats.filter((f: any) => f.vcodec !== "none" || f.ext === "mp4");
-                  const isShorts = item.url.includes("/shorts/");
-                  
-                  if (item.url.includes("youtube.com") || item.url.includes("youtu.be")) {
-                    if (isShorts) return "direct";
-                    
-                    // Auto-select best HD
-                    const hdTarget = allFormats
-                      .filter((f: any) => f.height === 720 || f.height === 1080 || f.height === 1440 || f.height === 2160)
-                      .sort((a: any, b: any) => b.height - a.height)[0];
-                    
-                    if (hdTarget) return hdTarget.format_id;
+                  const formats = data.formats || [];
+                  // Best combined MP4 with both video and audio
+                  const combined = formats.filter((f: any) => 
+                    f.vcodec !== "none" && f.acodec !== "none" && (f.ext === "mp4" || f.vcodec?.includes("avc"))
+                  );
+                  if (combined.length > 0) {
+                    return combined.sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0].format_id;
                   }
                   
-                  // Default best selection
-                  return allFormats
-                    .sort((a: any, b: any) => {
-                      const aMp4 = a.ext === "mp4" ? 1 : 0;
-                      const bMp4 = b.ext === "mp4" ? 1 : 0;
-                      if (aMp4 !== bMp4) return bMp4 - aMp4;
-                      return (b.quality || 0) - (a.quality || 0);
-                    })[0]?.format_id || "direct";
+                  // Fallback: direct format or just the very best video available
+                  const direct = formats.find((f: any) => f.format_id === "direct");
+                  if (direct) return "direct";
+                  
+                  const bestAny = [...formats].sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0];
+                  return bestAny?.format_id || "direct";
                 })(),
               }
             : item,
@@ -432,14 +421,6 @@ export default function App() {
     setItems((current) => current.filter((item) => item.id !== id));
   };
 
-  const toggleAudioOnly = (id: string) => {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id ? { ...item, audioOnly: !item.audioOnly } : item,
-      ),
-    );
-  };
-
   const setQuality = (id: string, qualityId: string) => {
     setItems((current) =>
       current.map((item) =>
@@ -475,6 +456,7 @@ export default function App() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
   const startDownload = async (item: DownloadItem) => {
     if (!item.metadata) return;
 
@@ -482,71 +464,9 @@ export default function App() {
       .replace(/[^a-z0-9]/gi, "_")
       .toLowerCase();
 
-    // Handle Carousel (Multiple Photos)
-    if (item.metadata.mediaType === "carousel" && item.metadata.images && item.metadata.images.length > 0) {
-      for (let i = 0; i < item.metadata.images.length; i++) {
-        const imageUrl = item.metadata.images[i];
-        const filename = `${safeTitle}_${i + 1}.jpg`;
-        const downloadUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
-        
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.setAttribute("download", filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        if (i < item.metadata.images.length - 1) {
-          await new Promise(r => setTimeout(r, 600));
-        }
-      }
-      return;
-    }
-
-    // Handle single photo or if formats is empty but we have a thumbnail
-    if (item.metadata.mediaType === "photo" || (item.metadata.formats.length === 0 && item.metadata.thumbnail)) {
-      const imageUrl = item.metadata.thumbnail;
-      const ext = imageUrl.toLowerCase().includes(".png") ? "png" : "jpg";
-      const filename = `${safeTitle}.${ext}`;
-      const downloadUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      return;
-    }
-
-    let format: Format | undefined;
-    if (item.audioOnly) {
-      // Find the best audio-only stream
-      format = item.metadata.formats
-        .filter((f) => f.acodec !== "none" && f.vcodec === "none")
-        .sort((a, b) => {
-          // Priority 1: Actual MP3 if it somehow exists (rare in raw streams)
-          const aMp3 = a.ext === "mp3" ? 1 : 0;
-          const bMp3 = b.ext === "mp3" ? 1 : 0;
-          if (aMp3 !== bMp3) return bMp3 - aMp3;
-
-          // Priority 2: M4A/AAC (best universal compatibility after MP3)
-          const aM4a = a.ext === "m4a" ? 1 : 0;
-          const bM4a = b.ext === "m4a" ? 1 : 0;
-          if (aM4a !== bM4a) return bM4a - aM4a;
-
-          // Priority 3: ABR (average bitrate) or size
-          return (b.abr || b.filesize || 0) - (a.abr || a.filesize || 0);
-        })[0];
-
-      // Fallback for some extractors that don't split audio/video streams properly in metadata
-      if (!format) {
-        format = item.metadata.formats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0];
-      }
-    } else {
-      format = item.metadata.formats.find(
-        (f) => f.format_id === item.selectedQuality,
-      );
-    }
+    let format = item.metadata.formats.find(
+      (f) => f.format_id === item.selectedQuality,
+    );
 
     if (!format) {
       format = item.metadata.formats
@@ -560,17 +480,12 @@ export default function App() {
 
     if (!format) return;
 
-    const extension = item.audioOnly ? "mp3" : (format.ext || "mp4");
+    // The format.url already points to /api/download?url=...
+    const downloadUrl = `${format.url}&mode=download`;
     
-    // Auto-fix title for universal compatibility
-    const universalTitle = safeTitle.replace(/[^a-z0-9]/gi, "_").substring(0, 50);
-    
-    const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(universalTitle + "." + extension)}`;
-    
-    // Create hidden link to trigger download safely across all devices
     const link = document.createElement("a");
     link.href = downloadUrl;
-    link.download = universalTitle + "." + extension;
+    link.download = safeTitle.substring(0, 50) + ".mp4";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -759,7 +674,7 @@ export default function App() {
                     <input
                       type="file"
                       className="hidden"
-                      accept="video/mp4,video/x-m4v,video/*,audio/*"
+                      accept="video/mp4,video/x-m4v,video/*"
                       onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
                     />
                   </label>
@@ -818,11 +733,6 @@ export default function App() {
                       : inputText.trim()
                         ? activeTab === "batch" ? "START BATCH" : "START"
                         : "PASTE URL"}
-                    {inputText.trim() ? (
-                      <ArrowRight className="w-4 h-4 ml-1" />
-                    ) : (
-                      <LinkIcon className="w-4 h-4 ml-1" />
-                    )}
                   </button>
                 </div>
               </div>
@@ -900,35 +810,15 @@ export default function App() {
                     {previewId === item.id ? (
                       <video
                         src={(() => {
-                          const directFormat = item.metadata?.formats.find((f: any) => f.vcodec !== "none" || f.format_id === "direct");
-                          const videoUrl = directFormat?.url || item.metadata?.formats[0]?.url;
-                          return videoUrl ? `/api/proxy?url=${encodeURIComponent(videoUrl)}&filename=preview.mp4` : item.url;
+                          const formats = item.metadata?.formats || [];
+                          const selected = formats.find(f => f.format_id === item.selectedQuality) || formats[0];
+                          return selected?.url || item.url;
                         })()}
                         className="w-full h-full object-contain"
                         controls
                         autoPlay
                         playsInline
                       />
-                    ) : item.metadata?.mediaType === "carousel" ? (
-                      <div className="relative w-full h-full">
-                        <div className="flex w-full h-full overflow-x-auto scroll-smooth snap-x snap-mandatory hide-scrollbar">
-                          {item.metadata.images?.map((img, idx) => (
-                            <div key={idx} className="w-full h-full flex-shrink-0 snap-start">
-                              <img
-                                src={img}
-                                className="w-full h-full object-cover"
-                                alt={`Carousel ${idx + 1}`}
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
-                          {item.metadata.images?.map((_, idx) => (
-                            <div key={idx} className="w-1 h-1 rounded-full bg-white/50" />
-                          ))}
-                        </div>
-                      </div>
                     ) : (
                       <>
                         <img
@@ -939,16 +829,14 @@ export default function App() {
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-70"
                           referrerPolicy="no-referrer"
                         />
-                        {item.metadata?.mediaType !== "photo" && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => setPreviewId(item.id)}
-                              className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110 active:scale-95"
-                            >
-                              <Play className="w-6 h-6 fill-current ml-1" />
-                            </button>
-                          </div>
-                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => setPreviewId(item.id)}
+                            className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl transform scale-90 group-hover:scale-100 transition-transform hover:scale-110 active:scale-95"
+                          >
+                            <Play className="w-6 h-6 fill-current ml-1" />
+                          </button>
+                        </div>
                       </>
                     )}
                     
@@ -1003,10 +891,13 @@ export default function App() {
                             </button>
                           </div>
                         )}
-                                               {item.status === "ready" && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {item.status === "ready" && (
+                          <div className={cn(
+                            "grid gap-3",
+                            detectPlatform(item.url) === "youtube" ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"
+                          )}>
                             {/* Quality Select - Support YouTube with HD preference */}
-                            {detectPlatform(item.url) === "youtube" ? (
+                            {detectPlatform(item.url) === "youtube" && (
                               <div className={cn(
                                 "rounded-xl p-3 border",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
@@ -1042,7 +933,10 @@ export default function App() {
                                   })()}
                                 </select>
                               </div>
-                            ) : (
+                            )}
+
+                            {/* Media Type Display */}
+                            {detectPlatform(item.url) !== "youtube" && (
                               <div className={cn(
                                 "rounded-xl p-3 border flex flex-col justify-center",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
@@ -1051,36 +945,6 @@ export default function App() {
                                 <span className="text-xs font-black uppercase tracking-widest text-[#FF1493]">
                                   {item.metadata?.mediaType === "photo" ? "PHOTO CONTENT" : item.metadata?.mediaType === "carousel" ? "CAROUSEL POST" : "VIDEO CONTENT"}
                                 </span>
-                              </div>
-                            )}
-
-                            {/* Mode Toggle - Only for videos */}
-                            {item.metadata?.mediaType === "video" && (
-                              <div className={cn(
-                                "rounded-xl p-3 border",
-                                theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
-                              )}>
-                                <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">AI MAGIC MODE</span>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => toggleAudioOnly(item.id)}
-                                    className={cn(
-                                      "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                      !item.audioOnly ? "bg-[#FF1493] text-white shadow-lg shadow-[#FF1493]/20" : "text-gray-500 hover:text-gray-400"
-                                    )}
-                                  >
-                                    TRANSCRIPT
-                                  </button>
-                                  <button
-                                    onClick={() => toggleAudioOnly(item.id)}
-                                    className={cn(
-                                      "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                      item.audioOnly ? "bg-[#FF1493] text-white shadow-lg shadow-[#FF1493]/20" : "text-gray-500 hover:text-gray-400"
-                                    )}
-                                  >
-                                    AUDIO ONLY
-                                  </button>
-                                </div>
                               </div>
                             )}
                           </div>
