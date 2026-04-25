@@ -160,8 +160,13 @@ export default function App() {
     }
   };
 
-  const handleAddUrls = useCallback((urlOverride?: any) => {
-    const sourceText = String(urlOverride || inputText || "");
+  const handleAddUrls = useCallback((urlOverride?: string | string[]) => {
+    const sourceText = typeof urlOverride === "string" 
+      ? urlOverride 
+      : Array.isArray(urlOverride) 
+        ? urlOverride.join("\n") 
+        : inputText;
+        
     if (!sourceText.trim() && activeTab !== "upload") return;
 
     let urls: string[] = [];
@@ -222,9 +227,6 @@ export default function App() {
       }
     } catch (err) {
       console.warn("Clipboard access denied or unavailable. Please paste manually.");
-      // Optional: focus the input to help the user
-      const input = document.querySelector('textarea');
-      if (input) input.focus();
     }
   };
 
@@ -343,7 +345,7 @@ export default function App() {
       const promptType =
         t === "timeline"
           ? "Generate a detailed TIMELINE/CHAPTER based transcript. Include timestamps (e.g. 00:00 - Intro) and describe what happens in each segment."
-          : "Generate a professional, well-structured transcript and summary written like an expert article writer. Use clear headings, bullet points for key takeaways, and a sophisticated narrative flow.";
+          : "Generate a professional, well-structured transcript and summary.";
 
       const contents = `Analysing video metadata to provide the transcript content ONLY.
         Type: ${promptType}
@@ -352,13 +354,14 @@ export default function App() {
         Duration: ${item.metadata?.duration || "Unknown"} seconds
         Platform: ${item.metadata?.extractor}
         
+        LANGUAGES SUPPORTED: English, Spanish, French, German, Russian, Italian, Japanese, Chinese, Korean.
+        
         CRITICAL RULES:
-        1. OUTPUT THE TRANSCRIPT CONTENT ONLY.
-        2. NO INTRODUCTIONS.
-        3. NO META-ANALYSIS.
-        4. NO NOTES OR DISCLAIMERS.
-        5. DO NOT mention the AI.
-        6. Detect the language of the video and use it naturally.
+        1. ACCURACY: Transcribe as if you are listening to the video exactly. 
+        2. NO WORDS CASE: If the metadata or description suggests this is just a silent clip, background music, or otherwise contains no human speech in the supported languages, output ONLY: "You can't transcript this video because it contains no human speech or is inaccessible."
+        3. OUTPUT THE TRANSCRIPT CONTENT ONLY - do not add intros or outros.
+        4. Detect and use the original language naturally from the supported list.
+        5. DO NOT MENTION AI.
         
         Start directly with the content. Use Markdown.`;
 
@@ -834,7 +837,7 @@ export default function App() {
         </section>
 
         {/* Results */}
-        <section className="space-y-12 mt-12">
+        <section className="space-y-12 mt-12 pb-24">
           <AnimatePresence mode="popLayout">
             {items.map((item) => (
               <motion.div
@@ -848,7 +851,7 @@ export default function App() {
                 {/* Remove Button - Absolute */}
                 <button
                   onClick={() => removeItem(item.id)}
-                  className="absolute top-4 right-4 z-10 p-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-xl backdrop-blur transition-all active:scale-90 border border-red-500/20"
+                  className="absolute top-4 right-4 z-10 p-2 bg-red-500/20 text-red-600 hover:bg-red-500/30 rounded-xl backdrop-blur transition-all active:scale-90 border border-red-500/40"
                   title="Remove Item"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -882,9 +885,6 @@ export default function App() {
                           {item.metadata.images?.map((_, idx) => (
                             <div key={idx} className="w-1 h-1 rounded-full bg-white/50" />
                           ))}
-                        </div>
-                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[8px] font-black text-white uppercase tracking-widest">
-                           {item.metadata.images?.length} Photos
                         </div>
                       </div>
                     ) : (

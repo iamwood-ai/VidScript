@@ -73,23 +73,35 @@ async function startServer() {
         const description = ogDesc ? ogDesc[1] : "Video successfully identified. Our AI is preparing the high-quality, watermark-free download link.";
 
         // Attempt to find actual video URL in meta tags for fallback
-        const ogVideo = html.match(/<meta property="og:video" content="(.*?)"/i) || 
-                        html.match(/<meta property="og:video:url" content="(.*?)"/i) ||
-                        html.match(/<meta property="og:video:secure_url" content="(.*?)"/i);
+        const videoMatches = [
+          html.match(/<meta property="og:video" content="(.*?)"/i),
+          html.match(/<meta property="og:video:url" content="(.*?)"/i),
+          html.match(/<meta property="og:video:secure_url" content="(.*?)"/i),
+          html.match(/"video_url":"(.*?)"/),
+          html.match(/"download_addr":"(.*?)"/), // TikTok
+          html.match(/"display_url":"(.*?)"/), // Instagram photo
+        ].filter(Boolean);
         
-        const extractedVideoUrl = ogVideo ? ogVideo[1].replace(/&amp;/g, '&') : url;
+        let extractedVideoUrl = url;
+        if (videoMatches.length > 0) {
+          extractedVideoUrl = videoMatches[0]![1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+        }
 
         // Identify Media Type
         let mediaType: "video" | "photo" | "carousel" = "video";
         const images: string[] = [];
         
-        if (url.includes("instagram.com/p/") || url.includes("instagram.com/reels/") || url.includes("facebook.com") || url.includes("tiktok.com")) {
+        if (url.includes("instagram.com") || url.includes("facebook.com") || url.includes("tiktok.com")) {
           // Look for multiple images in meta tags for carousels
           const allImages = [...html.matchAll(/<meta property="og:image" content="(.*?)"/gi)].map(m => m[1].replace(/&amp;/g, '&'));
-          if (allImages.length > 1) {
+          
+          // Filter out duplicates and common icons
+          const uniqueImages = [...new Set(allImages)].filter(img => !img.includes('icon') && !img.includes('logo'));
+          
+          if (uniqueImages.length > 1) {
             mediaType = "carousel";
-            images.push(...allImages);
-          } else if (html.includes('type="image"') || html.includes('property="og:type" content="image"')) {
+            images.push(...uniqueImages);
+          } else if (html.includes('type="image"') || html.includes('property="og:type" content="image"') || url.includes("/p/")) {
             mediaType = "photo";
           }
         }
