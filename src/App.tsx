@@ -955,13 +955,6 @@ export default function App() {
                     {/* Bottom Action Section */}
                     <div className="flex items-center gap-2 mt-auto">
                       <button
-                        onClick={() => removeItem(item.id)}
-                        className="flex-1 h-12 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl flex items-center justify-center transition-all active:scale-95 font-black text-[10px] tracking-widest gap-2"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> REMOVE
-                      </button>
-                      <button
                         onClick={() => window.open(item.url, "_blank")}
                         className="flex-1 h-12 border border-indigo-500/10 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center transition-all active:scale-95"
                         title="Open Original Link"
