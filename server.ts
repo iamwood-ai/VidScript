@@ -24,15 +24,23 @@ async function startServer() {
     try {
       try {
         const isFacebook = url.includes("facebook.com") || url.includes("fb.watch") || url.includes("fb.com");
+        const isX = url.includes("x.com") || url.includes("twitter.com");
+        
         const output = await youtubeDl(url, {
-          format: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+          format: "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
-          referer: isFacebook ? "https://www.facebook.com/" : url,
+          noPlaylist: true,
+          flatPlaylist: true,
+          quiet: true,
+          referer: isFacebook ? "https://www.facebook.com/" : (isX ? "https://x.com/" : url),
           addHeader: [
-            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language: en-US,en;q=0.9"
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept-Language: en-US,en;q=0.9",
+            "Sec-Ch-Ua: \"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"121\", \"Chromium\";v=\"121\"",
+            "Sec-Ch-Ua-Mobile: ?0",
+            "Sec-Ch-Ua-Platform: \"Windows\""
           ]
         });
         return res.json(output);
@@ -79,43 +87,75 @@ async function startServer() {
           html.match(/<meta property="og:video:secure_url" content="(.*?)"/i),
           html.match(/"video_url":"(.*?)"/),
           html.match(/"download_addr":"(.*?)"/), // TikTok
+          html.match(/"play_addr":"(.*?)"/), // TikTok alternative
           html.match(/"display_url":"(.*?)"/), // Instagram photo
         ].filter(Boolean);
         
         let extractedVideoUrl = url;
         if (videoMatches.length > 0) {
-          extractedVideoUrl = videoMatches[0]![1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&');
+          extractedVideoUrl = videoMatches[0]![1].replace(/\\u0026/g, '&').replace(/&amp;/g, '&').replace(/\\/g, '');
         }
 
-        // Identify Media Type
+        // More aggressive Instagram Reel and Video scraping
+        if (url.includes("instagram.com")) {
+           const instaVideoMatches = html.match(/"video_url":"([^"]+)"/) || 
+                                    html.match(/"video_dash_manifest":"([^"]+)"/) ||
+                                    html.match(/property="og:video"\s+content="([^"]+)"/);
+           if (instaVideoMatches && instaVideoMatches[1]) {
+             extractedVideoUrl = instaVideoMatches[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+           }
+        }
+
+        // TikTok Specific Extraction
+        if (url.includes("tiktok.com")) {
+           const tiktokMatches = html.match(/"playAddr":"([^"]+)"/) || html.match(/"downloadAddr":"([^"]+)"/) || html.match(/"play_addr":{"url_list":\["([^"]+)"/);
+           if (tiktokMatches && tiktokMatches[1]) {
+             extractedVideoUrl = tiktokMatches[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+           }
+        }
+
+        // Facebook Specific Extraction
+        if (url.includes("facebook.com") || url.includes("fb.watch")) {
+           const fbMatches = html.match(/"hd_src":"([^"]+)"/) || html.match(/"sd_src":"([^"]+)"/) || html.match(/video: \[{url: "([^"]+)"/);
+           if (fbMatches && fbMatches[1]) {
+              extractedVideoUrl = fbMatches[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+           }
+        }
+
+        // Identify Media Type - Only treat as photo if explicitly a Pinterest or known photo-only path
         let mediaType: "video" | "photo" | "carousel" = "video";
         const images: string[] = [];
-        
-        if (url.includes("instagram.com") || url.includes("facebook.com") || url.includes("tiktok.com")) {
-          // Look for multiple images in meta tags for carousels
-          const allImages = [...html.matchAll(/<meta property="og:image" content="(.*?)"/gi)].map(m => m[1].replace(/&amp;/g, '&'));
-          
-          // Filter out duplicates and common icons
-          const uniqueImages = [...new Set(allImages)].filter(img => !img.includes('icon') && !img.includes('logo'));
-          
-          if (uniqueImages.length > 1) {
-            mediaType = "carousel";
-            images.push(...uniqueImages);
-          } else if (html.includes('type="image"') || html.includes('property="og:type" content="image"') || url.includes("/p/")) {
-            mediaType = "photo";
-          }
+        const lowUrl = url.toLowerCase();
+
+        if (lowUrl.includes("pinterest.com")) {
+          mediaType = "photo";
+        }
+
+        // Refined fallback check: ensure we really have a media URL
+        const isValidMedia = extractedVideoUrl && 
+                           extractedVideoUrl.startsWith("http") && 
+                           !extractedVideoUrl.includes("instagram.com/p/") && 
+                           !extractedVideoUrl.includes("tiktok.com/@") &&
+                           extractedVideoUrl !== url;
+
+        if (!isValidMedia) {
+           console.warn("Direct media link not found in metadata for:", url);
+           // Fallback to photo only if we really can't find a video and it's a platform known for photos
+           if (lowUrl.includes("instagram.com/p/")) {
+             mediaType = "photo";
+           }
         }
 
         const fallbackData = {
           title: title.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
           thumbnail: thumbnail.replace(/&amp;/g, '&'),
           uploader: url.split('/')[2].replace('www.', ''),
-          extractor: url.includes('youtube') ? 'youtube' : (url.includes('tiktok') ? 'tiktok' : (url.includes('instagram') ? 'instagram' : (url.includes('facebook') ? 'facebook' : 'video'))),
+          extractor: lowUrl.includes('youtube') ? 'youtube' : (lowUrl.includes('tiktok') ? 'tiktok' : (lowUrl.includes('instagram') ? 'instagram' : (lowUrl.includes('facebook') ? 'facebook' : (lowUrl.includes('twitter.com') || lowUrl.includes('x.com') ? 'twitter' : 'video')))),
           description: (description || "").substring(0, 200).replace(/&amp;/g, '&'),
           mediaType,
           images,
-          formats: mediaType === "video" ? [
-            { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "Compatible Format", quality: 10 }
+          formats: mediaType === "video" && isValidMedia ? [
+            { format_id: "direct", url: extractedVideoUrl, ext: "mp4", note: "H.264 MP4", quality: 10 }
           ] : [],
           webpage_url: url
         };
@@ -147,11 +187,12 @@ async function startServer() {
       const isInstagram = urlStr.includes("instagram.com") || urlStr.includes("cdninstagram.com");
       const isFacebook = urlStr.includes("facebook.com") || urlStr.includes("fbcdn.net");
       const isTikTok = urlStr.includes("tiktok.com") || urlStr.includes("tiktokv.com");
+      const isTwitter = urlStr.includes("twitter.com") || urlStr.includes("x.com") || urlStr.includes("twimg.com");
       
       // High-compatibility headers for streaming media platforms
       const headers: any = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
+        "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,image/*,*/*;q=0.5",
         "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
         "Accept-Encoding": "identity", // Force raw stream
@@ -168,6 +209,8 @@ async function startServer() {
       } else if (isTikTok) {
         headers["Referer"] = "https://www.tiktok.com/";
         headers["Sec-Fetch-Dest"] = "video";
+      } else if (isTwitter) {
+        headers["Referer"] = "https://x.com/";
       }
 
       if (range) {
@@ -198,17 +241,27 @@ async function startServer() {
       }
 
       // Set broad compatibility headers-
-      let sanitizedFilename = (filename as string || "video.mp4").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      let sanitizedFilename = (filename as string || "file").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      if (!sanitizedFilename.includes('.')) sanitizedFilename += ".mp4"; // Default fallback ext
       
-      // Force correct extensions based on requested mode (Audio vs Video)
-      const isAudio = (filename as string || "").toLowerCase().endsWith(".mp3");
+      // Force correct extensions (Audio vs Video vs Image)
+      const lowFile = (filename as string || "").toLowerCase();
+      const isAudio = lowFile.endsWith(".mp3") || lowFile.endsWith(".m4a");
+      const isImage = lowFile.endsWith(".jpg") || lowFile.endsWith(".jpeg") || lowFile.endsWith(".png") || lowFile.endsWith(".webp");
+      
       let finalContentType = "application/octet-stream";
 
       if (isAudio) {
-        if (!sanitizedFilename.toLowerCase().endsWith(".mp3")) {
+        if (!sanitizedFilename.toLowerCase().endsWith(".mp3") && !sanitizedFilename.toLowerCase().endsWith(".m4a")) {
           sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp3";
         }
-        finalContentType = "audio/mpeg";
+        finalContentType = isTwitter ? "audio/mpeg" : (contentTypeHeader.includes("audio") ? contentTypeHeader : "audio/mpeg");
+      } else if (isImage) {
+        const ext = lowFile.split('.').pop() || "jpg";
+        if (!sanitizedFilename.toLowerCase().endsWith("." + ext)) {
+          sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + "." + ext;
+        }
+        finalContentType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
       } else {
         if (!sanitizedFilename.toLowerCase().endsWith(".mp4")) {
           sanitizedFilename = sanitizedFilename.replace(/\.[^/.]+$/, "") + ".mp4";
@@ -221,7 +274,8 @@ async function startServer() {
       res.setHeader("Content-Type", finalContentType);
       res.setHeader("Content-Transfer-Encoding", "binary");
       res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour for mobile players
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`,

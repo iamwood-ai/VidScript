@@ -35,6 +35,8 @@ import {
   Layers,
   FileUp,
   X,
+  ArrowRight,
+  Twitter,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -124,11 +126,18 @@ export default function App() {
     if (u.includes("tiktok.com")) return "tiktok";
     if (u.includes("facebook.com") || u.includes("fb.watch") || u.includes("fb.com")) return "facebook";
     if (u.includes("instagram.com")) return "instagram";
+    if (u.includes("twitter.com") || u.includes("x.com")) return "twitter";
     return "generic";
   };
 
   const getPlatformIcon = (platform: string, size = "w-5 h-5") => {
     switch (platform) {
+      case "twitter":
+        return (
+          <div className={cn("bg-black rounded-lg p-1.5 flex items-center justify-center border border-white/20", size)}>
+            <Twitter className="text-white w-full h-full" />
+          </div>
+        );
       case "youtube":
         return (
           <div className={cn("bg-red-600 rounded-lg p-1.5 flex items-center justify-center", size)}>
@@ -263,16 +272,30 @@ export default function App() {
                 ...item,
                 status: "ready",
                 metadata: data,
-                selectedQuality:
-                  data.formats
-                    .filter((f: any) => f.vcodec !== "none")
+                selectedQuality: (() => {
+                  const allFormats = data.formats.filter((f: any) => f.vcodec !== "none" || f.ext === "mp4");
+                  const isShorts = item.url.includes("/shorts/");
+                  
+                  if (item.url.includes("youtube.com") || item.url.includes("youtu.be")) {
+                    if (isShorts) return "direct";
+                    
+                    // Auto-select best HD
+                    const hdTarget = allFormats
+                      .filter((f: any) => f.height === 720 || f.height === 1080 || f.height === 1440 || f.height === 2160)
+                      .sort((a: any, b: any) => b.height - a.height)[0];
+                    
+                    if (hdTarget) return hdTarget.format_id;
+                  }
+                  
+                  // Default best selection
+                  return allFormats
                     .sort((a: any, b: any) => {
-                      // Prioritize MP4 for universal device compatibility (iOS/Android)
                       const aMp4 = a.ext === "mp4" ? 1 : 0;
                       const bMp4 = b.ext === "mp4" ? 1 : 0;
                       if (aMp4 !== bMp4) return bMp4 - aMp4;
                       return (b.quality || 0) - (a.quality || 0);
-                    })[0]?.format_id || "default",
+                    })[0]?.format_id || "direct";
+                })(),
               }
             : item,
         ),
@@ -348,22 +371,19 @@ export default function App() {
           : "Generate a professional, well-structured transcript and summary.";
 
       const contents = `Analysing video metadata to provide the transcript content ONLY.
-        Type: ${promptType}
+        Type: Word-for-word transcript
         Title: ${item.metadata?.title}
         Description: ${item.metadata?.description || "No description available"}
-        Duration: ${item.metadata?.duration || "Unknown"} seconds
-        Platform: ${item.metadata?.extractor}
         
         LANGUAGES SUPPORTED: English, Spanish, French, German, Russian, Italian, Japanese, Chinese, Korean.
         
         CRITICAL RULES:
-        1. ACCURACY: Transcribe as if you are listening to the video exactly. 
-        2. NO WORDS CASE: If the metadata or description suggests this is just a silent clip, background music, or otherwise contains no human speech in the supported languages, output ONLY: "You can't transcript this video because it contains no human speech or is inaccessible."
-        3. OUTPUT THE TRANSCRIPT CONTENT ONLY - do not add intros or outros.
-        4. Detect and use the original language naturally from the supported list.
-        5. DO NOT MENTION AI.
+        1. NO INTRO/OUTRO: Do not add any introduction or metadata like "Title:". Start immediately with the first spoken word.
+        2. WORD-FOR-WORD: Transcribe exactly what is heard. No summaries, no commentary.
+        3. NO SPEECH CASE: If no human speech is detected, output ONLY: "You can't transcript this video because it contains no human speech or is inaccessible."
+        4. NO AI MENTION: Never mention being an AI.
         
-        Start directly with the content. Use Markdown.`;
+        Start directly with the content. Use Markdown for paragraphs only.`;
 
       try {
         const result = await ai.models.generateContent({
@@ -485,7 +505,8 @@ export default function App() {
     // Handle single photo or if formats is empty but we have a thumbnail
     if (item.metadata.mediaType === "photo" || (item.metadata.formats.length === 0 && item.metadata.thumbnail)) {
       const imageUrl = item.metadata.thumbnail;
-      const filename = `${safeTitle}.jpg`;
+      const ext = imageUrl.toLowerCase().includes(".png") ? "png" : "jpg";
+      const filename = `${safeTitle}.${ext}`;
       const downloadUrl = `/api/proxy?url=${encodeURIComponent(imageUrl)}&filename=${encodeURIComponent(filename)}`;
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -539,12 +560,16 @@ export default function App() {
     if (!format) return;
 
     const extension = item.audioOnly ? "mp3" : (format.ext || "mp4");
-    const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(safeTitle + "." + extension)}`;
+    
+    // Auto-fix title for universal compatibility
+    const universalTitle = safeTitle.replace(/[^a-z0-9]/gi, "_").substring(0, 50);
+    
+    const downloadUrl = `/api/proxy?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(universalTitle + "." + extension)}`;
     
     // Create hidden link to trigger download safely across all devices
     const link = document.createElement("a");
     link.href = downloadUrl;
-    link.setAttribute("download", safeTitle + "." + extension);
+    link.download = universalTitle + "." + extension;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -722,78 +747,83 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-              {activeTab === "upload" ? (
-                <label className="w-full sm:flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 cursor-pointer hover:bg-white/5 transition-colors group">
-                  <UploadIcon className="w-8 h-8 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
-                  <span className="text-sm font-bold text-gray-500 text-center">
-                    {uploadFile ? uploadFile.name : "Select Video File"}
-                  </span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept="video/mp4,video/x-m4v,video/*,audio/*"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                  />
-                </label>
-              ) : (
-                <div
-                  className={cn(
-                    "w-full sm:flex-1 flex items-center px-6 rounded-2xl border transition-all h-[64px]",
-                    theme === "dark"
-                      ? "bg-black border-white/10 focus-within:border-indigo-500/50"
-                      : "bg-gray-50 border-gray-100 focus-within:border-indigo-500/30",
-                  )}
-                >
-                  <textarea
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Paste a video URL…"
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-base placeholder-gray-700 resize-none h-[24px] overflow-hidden whitespace-nowrap p-0 leading-[24px]"
-                    onKeyDown={(e) =>
-                      !e.shiftKey &&
-                      e.key === "Enter" &&
-                      (e.preventDefault(), handleAddUrls())
-                    }
-                  />
-                  {inputText.trim() && (
-                    <button
-                      onClick={() => setInputText("")}
-                      className="p-1 text-gray-500 hover:text-red-500 transition-colors"
-                      title="Clear Input"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-              )}
+            <div className="p-4 sm:p-6 flex flex-col items-stretch gap-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                {activeTab === "upload" ? (
+                  <label className="w-full sm:flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 cursor-pointer hover:bg-white/5 transition-colors group">
+                    <UploadIcon className="w-8 h-8 text-indigo-500 mb-2 group-hover:scale-110 transition-transform" />
+                    <span className="text-sm font-bold text-gray-500 text-center">
+                      {uploadFile ? uploadFile.name : "Select Video File"}
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="video/mp4,video/x-m4v,video/*,audio/*"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                ) : (
+                  <div
+                    className={cn(
+                      "w-full sm:flex-1 flex items-center px-6 rounded-2xl border transition-all",
+                      activeTab === "batch" ? "min-h-[120px] py-4" : "h-[64px]",
+                      theme === "dark"
+                        ? "bg-black border-white/10 focus-within:border-indigo-500/50"
+                        : "bg-gray-50 border-gray-100 focus-within:border-indigo-500/30",
+                    )}
+                  >
+                    <textarea
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder={activeTab === "batch" ? "Paste multiple video URLs (one per line)..." : "Paste a video URL..."}
+                      className={cn(
+                        "flex-1 bg-transparent border-none focus:ring-0 text-base placeholder-gray-700 resize-none p-0",
+                        activeTab === "batch" ? "min-h-[80px]" : "h-[24px] overflow-hidden whitespace-nowrap leading-[24px]"
+                      )}
+                      onKeyDown={(e) =>
+                        !e.shiftKey &&
+                        e.key === "Enter" &&
+                        (e.preventDefault(), handleAddUrls())
+                      }
+                    />
+                    {inputText.trim() && (
+                      <button
+                        onClick={() => setInputText("")}
+                        className="p-1 text-gray-500 hover:text-red-500 transition-colors shrink-0"
+                        title="Clear Input"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                )}
 
-              <div className="w-full sm:w-auto flex flex-col gap-3 shrink-0">
-                <button
-                  onClick={
-                    !inputText.trim() && activeTab !== "upload"
-                      ? handlePaste
-                      : handleAddUrls
-                  }
-                  disabled={activeTab === "upload" && !uploadFile}
-                  className={cn(
-                    "w-full px-10 h-[64px] rounded-2xl font-black text-[10px] sm:text-xs tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg",
-                    !inputText.trim() && activeTab !== "upload"
-                      ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20"
-                      : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20",
-                  )}
-                >
-                  {activeTab === "upload"
-                    ? "ANALYZE"
-                    : inputText.trim()
-                      ? "START"
-                      : "PASTE URL"}
-                  {inputText.trim() ? (
-                    <ChevronRight className="w-4 h-4" />
-                  ) : (
-                    <LinkIcon className="w-4 h-4" />
-                  )}
-                </button>
+                <div className="w-full sm:w-auto flex flex-col gap-3 shrink-0">
+                  <button
+                    onClick={
+                      !inputText.trim() && activeTab !== "upload"
+                        ? handlePaste
+                        : handleAddUrls
+                    }
+                    disabled={activeTab === "upload" && !uploadFile}
+                    className={cn(
+                      "w-full px-10 h-[64px] rounded-2xl font-black text-[10px] sm:text-xs tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg",
+                      "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20",
+                      activeTab === "upload" && !uploadFile && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {activeTab === "upload"
+                      ? "ANALYZE"
+                      : inputText.trim()
+                        ? activeTab === "batch" ? "START BATCH" : "START"
+                        : "PASTE URL"}
+                    {inputText.trim() ? (
+                      <ArrowRight className="w-4 h-4 ml-1" />
+                    ) : (
+                      <LinkIcon className="w-4 h-4 ml-1" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -825,6 +855,12 @@ export default function App() {
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                   <span className="text-[9px] font-bold text-gray-500">
                     Facebook
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+                  <span className="text-[9px] font-bold text-gray-500">
+                    X
                   </span>
                 </div>
               </div>
@@ -862,7 +898,7 @@ export default function App() {
                   <div className="sm:w-64 aspect-video sm:aspect-square relative flex-shrink-0 bg-black/40 overflow-hidden group/carousel">
                     {previewId === item.id ? (
                       <video
-                        src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter((f) => f.vcodec !== "none")[0]?.url || item.url)}`}
+                        src={`/api/proxy?url=${encodeURIComponent(item.metadata?.formats.filter((f: any) => f.vcodec !== "none")[0]?.url || item.url)}`}
                         className="w-full h-full object-contain"
                         controls
                         autoPlay
@@ -963,76 +999,54 @@ export default function App() {
                         )}
                                                {item.status === "ready" && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {/* Quality Select / Media Info */}
-                            {(item.metadata?.mediaType === "video" && detectPlatform(item.url) === "youtube" && !item.url.includes("/shorts/")) ? (
+                            {/* Quality Select - Support YouTube with HD preference */}
+                            {detectPlatform(item.url) === "youtube" ? (
                               <div className={cn(
                                 "rounded-xl p-3 border",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
                               )}>
                                 <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">QUALITY</span>
                                 <select
-                                  className="w-full bg-transparent text-base font-bold focus:outline-none appearance-none cursor-pointer"
+                                  className="w-full bg-transparent text-[10px] font-black text-indigo-400 focus:outline-none appearance-none cursor-pointer uppercase tracking-widest"
                                   value={item.selectedQuality}
                                   onChange={(e) => setQuality(item.id, e.target.value)}
                                 >
-                                  {item.metadata?.formats
-                                    .filter((f) => f.vcodec !== "none")
-                                    .sort((a, b) => {
-                                      const aMp4 = a.ext === "mp4" ? 1 : 0;
-                                      const bMp4 = b.ext === "mp4" ? 1 : 0;
-                                      if (aMp4 !== bMp4) return bMp4 - aMp4;
-                                      return (b.quality || 0) - (a.quality || 0);
-                                    })
-                                    .map((f) => (
-                                      <option key={f.format_id} value={f.format_id} className="bg-neutral-900 text-white">
-                                        {f.resolution || "Auto"} ({f.ext?.toUpperCase()})
-                                      </option>
-                                    ))}
+                                  {(() => {
+                                    const allFormats = (item.metadata?.formats || []).filter((f: any) => f.vcodec !== "none" || f.ext === "mp4");
+                                    const isShorts = item.url.includes("/shorts/");
+                                    
+                                    // If shorts, just show best quality
+                                    if (isShorts) return <option value="direct">Best Quality (Shorts)</option>;
+                                    
+                                    // Filter for 720p, 1080p, 4K
+                                    const hdFormats = allFormats.filter((f: any) => 
+                                      f.height === 720 || f.height === 1080 || f.height === 1440 || f.height === 2160
+                                    ).sort((a: any, b: any) => b.height - a.height);
+                                    
+                                    if (hdFormats.length > 0) {
+                                      return hdFormats.map((f: any) => (
+                                        <option key={f.format_id} value={f.format_id} className="bg-neutral-900 text-white">
+                                          {f.resolution || `${f.height}p`} ({f.ext?.toUpperCase()})
+                                        </option>
+                                      ));
+                                    }
+                                    
+                                    // Fallback to absolute best if no HD found
+                                    return <option value="direct">Best Available Quality</option>;
+                                  })()}
                                 </select>
                               </div>
-                            ) : item.metadata?.mediaType !== "video" ? (
+                            ) : (
                               <div className={cn(
                                 "rounded-xl p-3 border flex flex-col justify-center",
                                 theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
                               )}>
                                 <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MEDIA TYPE</span>
                                 <span className="text-xs font-black uppercase tracking-widest text-indigo-400">
-                                  {item.metadata?.mediaType === "carousel" ? "COLLECTION" : "HIGH-RES PHOTO"}
+                                  {item.metadata?.mediaType === "photo" ? "PHOTO CONTENT" : item.metadata?.mediaType === "carousel" ? "CAROUSEL POST" : "VIDEO CONTENT"}
                                 </span>
                               </div>
-                            ) : null}
-
-                            {/* Mode Toggle */}
-                            <div className={cn(
-                              "rounded-xl p-3 border",
-                              theme === "dark" ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
-                            )}>
-                              <span className="text-[8px] font-black text-gray-600 uppercase block mb-1">MODE</span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => toggleAudioOnly(item.id)}
-                                  disabled={item.metadata?.mediaType !== "video"}
-                                  className={cn(
-                                    "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                    (!item.audioOnly && item.metadata?.mediaType === "video") ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400",
-                                    item.metadata?.mediaType !== "video" && "opacity-30 cursor-not-allowed"
-                                  )}
-                                >
-                                  VIDEO
-                                </button>
-                                <button
-                                  onClick={() => toggleAudioOnly(item.id)}
-                                  disabled={item.metadata?.mediaType !== "video"}
-                                  className={cn(
-                                    "flex-1 py-1.5 rounded-lg text-[9px] font-black transition-all uppercase",
-                                    item.audioOnly ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-400",
-                                    item.metadata?.mediaType !== "video" && "opacity-30 cursor-not-allowed"
-                                  )}
-                                >
-                                  AUDIO
-                                </button>
-                              </div>
-                            </div>
+                            )}
                           </div>
                         )}
                       </div>
