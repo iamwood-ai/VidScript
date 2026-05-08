@@ -1,8 +1,6 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
+node_modules
+dist
+temp_downloads
+.env
+.vite
 *.log
-.env*
-!.env.example

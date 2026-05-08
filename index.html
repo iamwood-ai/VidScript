@@ -3,67 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <!-- Preconnect for Performance -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>VidScript — Free Video Downloader & AI Transcripts</title>
+    <meta
+      name="description"
+      content="Download videos and images from Instagram, Facebook, X, YouTube and TikTok. Get instant AI transcripts for free."
+    />
     <style>
-      /* Critical CSS for Instant Paint */
-      :root { background: #ffffff; color: #111111; }
-      html.dark { background: #000000; color: #ffffff; }
-      body { margin: 0; font-family: sans-serif; }
-      #root { min-height: 100vh; }
-      
-      /* Smooth transitions for theme toggle later */
-      html { transition: background-color 0.2s ease; }
+      :root { background: #f8fafc; }
+      html.dark { background: #030712; }
+      body { margin: 0; }
     </style>
-
     <script>
-      // Optimization: Set theme IMMEDIATELY to prevent white flash
-      (function() {
-        const theme = localStorage.getItem('theme') || 'light';
-        if (theme === 'dark') document.documentElement.classList.add('dark');
+      (function () {
+        const t = localStorage.getItem("theme") || "dark";
+        if (t === "dark") document.documentElement.classList.add("dark");
       })();
     </script>
-    <title>VidScript - Free Video Downloader & AI Transcripts</title>
-    <meta name="description" content="VidScript is the best free video downloader and AI transcript generator for YouTube, TikTok, Instagram, and Facebook. Download high-quality videos without watermarks and get instant AI scripts." />
-    <meta name="keywords" content="video downloader, tiktok video downloader, youtube downloader, instagram saver, facebook video download, ai transcript, transcribe video, free ai scripts, video to text" />
-    
-    <!-- Open Graph / Social Media -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="VidScript - Free Video Downloader & AI Transcripts" />
-    <meta property="og:description" content="Download high-quality videos and get instant AI transcripts for free with VidScript." />
-    <meta property="og:image" content="https://picsum.photos/seed/vidscript/1200/630" />
   </head>
   <body>
-    <div id="root">
-      <div id="splash" style="position: fixed; inset: 0; background: #050505; display: flex; align-items: center; justify-center; z-index: 10000; transition: opacity 0.3s ease;">
-        <svg class="animate-spin" style="width: 48px; height: 48px; color: #6366f1;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-      </div>
-    </div>
-    <style>
-      .animate-spin {
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-    </style>
-    <script>
-      window.addEventListener('load', () => {
-        const splash = document.getElementById('splash');
-        if (splash) {
-          splash.style.opacity = '0';
-          setTimeout(() => splash.remove(), 300);
-        }
-      });
-    </script>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
